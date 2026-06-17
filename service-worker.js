@@ -1,4 +1,4 @@
-const CACHE_NAME = "cycle-garden-v1";
+const CACHE_NAME = "cycle-garden-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -20,7 +20,17 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Network-first: always try the network so code/UI updates show up immediately
+// when online, and fall back to the cached copy when offline.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
 });

@@ -42,6 +42,13 @@ app.addEventListener("click", (event) => {
   actions[action]?.();
 });
 
+app.addEventListener("change", (event) => {
+  if (event.target.id === "importFile") {
+    handleImportFile(event.target.files?.[0]);
+    event.target.value = "";
+  }
+});
+
 const actions = {
   "toggle-language": () => {
     state.language = state.language === "zh" ? "en" : "zh";
@@ -100,7 +107,12 @@ const actions = {
     saveState();
     showToast("设置已保存。");
   },
-  "export-data": () => downloadFile("period-tracker-data.json", JSON.stringify(state, null, 2), "application/json"),
+  "export-data": () => {
+    const stamp = today().replace(/-/g, "");
+    downloadFile(`cycle-garden-backup-${stamp}.json`, JSON.stringify(state, null, 2), "application/json");
+    showToast("已导出备份，请保存到安全的地方。");
+  },
+  "import-data": () => document.querySelector("#importFile")?.click(),
   "calendar-ics": () => {
     const ics = buildIcs();
     downloadFile("period-reminders.ics", ics, "text/calendar");
@@ -166,6 +178,10 @@ function renderCalendar() {
 function renderSettings() {
   document.querySelector("#prepDays").value = state.settings.prepDays;
   document.querySelector("#reminderTime").value = state.settings.reminderTime;
+}
+
+function latestPeriod() {
+  return [...state.periods].sort((a, b) => new Date(a.startDate) - new Date(b.startDate)).at(-1);
 }
 
 function getInsights() {
@@ -235,7 +251,7 @@ function buildCalendar(date) {
 function getDayClass(iso) {
   if (state.periods.some((period) => period.startDate <= iso && (period.endDate || today()) >= iso)) return "period";
   const insights = getInsights();
-  const last = state.periods.at(-1);
+  const last = latestPeriod();
   if (!last || !insights.averageCycle) return "";
   const next = addDays(last.startDate, insights.averageCycle);
   return iso >= addDays(next, -3) && iso <= addDays(next, 3) ? "predict" : "";
@@ -253,13 +269,14 @@ function renderWeek() {
 
 function buildIcs() {
   const insights = getInsights();
-  const last = state.periods.at(-1);
+  const last = latestPeriod();
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Cycle Garden//PWA//EN"];
   if (last && insights.averageCycle) {
     const next = addDays(last.startDate, insights.averageCycle);
-    const prep = addDays(next, -state.settings.prepDays);
-    lines.push(makeIcsEvent("Personal prep", prep));
-    lines.push(makeIcsEvent("Body check-in", next));
+    lines.push(makeIcsEvent("Restock essentials", addDays(next, -state.settings.prepDays)));
+    lines.push(makeIcsEvent("Personal prep", addDays(next, -3)));
+    lines.push(makeIcsEvent("Personal window", next));
+    lines.push(makeIcsEvent("Body check-in", addDays(next, 3)));
   }
   lines.push("END:VCALENDAR");
   return lines.join("\r\n");
@@ -326,6 +343,60 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function handleImportFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onerror = () => showToast("文件读不了，请再试一次。");
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch {
+      showToast("这不是有效的 JSON 文件。");
+      return;
+    }
+    if (!data || typeof data !== "object" || !Array.isArray(data.periods) || !Array.isArray(data.notes)) {
+      showToast("文件格式不对，请用本 app 导出的备份。");
+      return;
+    }
+    const added = mergeImported(data);
+    saveState();
+    view = "home";
+    render();
+    showToast(added.periods + added.notes
+      ? `已恢复：新增 ${added.periods} 段月经、${added.notes} 条备注。`
+      : "备份里的记录这台设备已经都有了。");
+  };
+  reader.readAsText(file);
+}
+
+function mergeImported(data) {
+  const periodIds = new Set(state.periods.map((period) => period.id));
+  let periods = 0;
+  data.periods.forEach((period) => {
+    if (period && period.startDate && !periodIds.has(period.id)) {
+      state.periods.push(period);
+      periodIds.add(period.id);
+      periods += 1;
+    }
+  });
+
+  const noteIds = new Set(state.notes.map((note) => note.id));
+  let notes = 0;
+  data.notes.forEach((note) => {
+    if (note && note.date && !noteIds.has(note.id)) {
+      state.notes.push(note);
+      noteIds.add(note.id);
+      notes += 1;
+    }
+  });
+
+  if (data.settings && typeof data.settings === "object") {
+    state.settings = { ...state.settings, ...data.settings };
+  }
+  return { periods, notes };
 }
 
 function downloadFile(filename, content, type) {

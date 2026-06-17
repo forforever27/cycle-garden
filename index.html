@@ -185,9 +185,16 @@
       </section>
 
       <section class="form-card glass">
+        <h2>备份 Backup</h2>
+        <p class="body-copy">数据现在只存在这台设备的浏览器里。请定期导出一份 JSON 保存好；换设备或清了浏览器数据后，用「导入」就能还原。</p>
+        <button class="plain-button" type="button" data-action="export-data">导出本地数据</button>
+        <button class="plain-button" type="button" data-action="import-data">导入 / 恢复数据</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </section>
+
+      <section class="form-card glass">
         <h2>Cloud sync plan</h2>
         <p class="body-copy">Supabase/Firebase 接上后：手机、电脑、平板用同一个账号登录，同一个链接就会看到同一份数据。</p>
-        <button class="plain-button" type="button" data-action="export-data">导出本地数据</button>
       </section>
 
       <section class="form-card glass">

@@ -124,6 +124,7 @@ const actions = {
 
 function render() {
   const template = document.querySelector(`#${view}-template`);
+  app.className = `app view-${view}`;
   app.replaceChildren(template.content.cloneNode(true));
 
   if (view === "home") renderHome();

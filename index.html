@@ -193,8 +193,9 @@
       </section>
 
       <section class="form-card glass">
-        <h2>Cloud sync plan</h2>
-        <p class="body-copy">Supabase/Firebase 接上后：手机、电脑、平板用同一个账号登录，同一个链接就会看到同一份数据。</p>
+        <h2>云同步 Cloud sync</h2>
+        <p class="body-copy" data-bind="cloudStatus">本机模式：数据只存在这台设备。</p>
+        <button class="soft-button" type="button" data-action="cloud-auth">云同步未设置</button>
       </section>
 
       <section class="form-card glass">

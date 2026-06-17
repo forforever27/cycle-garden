@@ -1,3 +1,5 @@
+import { firebaseConfig } from "./firebase-config.js";
+
 const STORAGE_KEY = "xy-period-tracker-pwa-v1";
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -107,6 +109,7 @@ const actions = {
     saveState();
     showToast("设置已保存。");
   },
+  "cloud-auth": () => cloudAuthToggle(),
   "export-data": () => {
     const stamp = today().replace(/-/g, "");
     downloadFile(`cycle-garden-backup-${stamp}.json`, JSON.stringify(state, null, 2), "application/json");
@@ -178,6 +181,26 @@ function renderCalendar() {
 function renderSettings() {
   document.querySelector("#prepDays").value = state.settings.prepDays;
   document.querySelector("#reminderTime").value = state.settings.reminderTime;
+  renderCloudStatus();
+}
+
+function renderCloudStatus() {
+  const statusNode = document.querySelector('[data-bind="cloudStatus"]');
+  const button = document.querySelector('[data-action="cloud-auth"]');
+  if (!statusNode || !button) return;
+  if (!cloud.ready) {
+    statusNode.textContent = "本机模式：数据只存在这台设备。填入 Firebase 配置后可开启多设备同步。";
+    button.textContent = "云同步未设置";
+    button.disabled = true;
+  } else if (cloud.user) {
+    statusNode.textContent = `已登录 ${cloud.user.email}。电脑、手机、平板用同一个 Google 帐号登录就会看到同一份数据。`;
+    button.textContent = "退出登录";
+    button.disabled = false;
+  } else {
+    statusNode.textContent = "用 Google 登录后，所有设备共享同一份数据，自动同步。";
+    button.textContent = "用 Google 登录";
+    button.disabled = false;
+  }
 }
 
 function latestPeriod() {
@@ -343,6 +366,7 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  pushCloud();
 }
 
 function handleImportFile(file) {
@@ -417,8 +441,98 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+// ---- Cloud sync (Firebase) ----
+// Stays in local-only mode until firebase-config.js has a real apiKey.
+// When signed in, records merge by id (append-only) so no device ever
+// overwrites another device's data; settings use last-write-wins.
+const FIREBASE_SDK = "https://www.gstatic.com/firebasejs/10.12.2";
+const cloud = { ready: false, user: null, auth: null, fs: null, db: null, docRef: null };
+
+async function initCloud() {
+  if (!firebaseConfig || !firebaseConfig.apiKey) return; // local-only mode
+  let appMod, authMod, fsMod;
+  try {
+    [appMod, authMod, fsMod] = await Promise.all([
+      import(`${FIREBASE_SDK}/firebase-app.js`),
+      import(`${FIREBASE_SDK}/firebase-auth.js`),
+      import(`${FIREBASE_SDK}/firebase-firestore.js`),
+    ]);
+  } catch (error) {
+    console.warn("Cloud sync unavailable (offline or blocked).", error);
+    return;
+  }
+
+  const app = appMod.initializeApp(firebaseConfig);
+  cloud.auth = authMod.getAuth(app);
+  cloud.fs = fsMod;
+  cloud.db = fsMod.getFirestore(app);
+  cloud.ready = true;
+
+  authMod.onAuthStateChanged(cloud.auth, async (user) => {
+    cloud.user = user;
+    if (user) {
+      cloud.docRef = fsMod.doc(cloud.db, "users", user.uid);
+      try {
+        const snap = await fsMod.getDoc(cloud.docRef);
+        if (snap.exists()) mergeImported(snap.data());
+      } catch (error) {
+        console.warn("Initial cloud read failed.", error);
+      }
+      saveState(); // persists locally and pushes the merged result up
+      render();
+      fsMod.onSnapshot(cloud.docRef, (snap) => {
+        if (!snap.exists()) return;
+        const before = JSON.stringify(state);
+        mergeImported(snap.data());
+        if (JSON.stringify(state) !== before) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          render();
+        }
+      });
+    } else {
+      cloud.docRef = null;
+    }
+    if (view === "settings") renderCloudStatus();
+  });
+}
+
+async function pushCloud() {
+  if (!cloud.ready || !cloud.user || !cloud.docRef) return;
+  try {
+    await cloud.fs.setDoc(cloud.docRef, {
+      periods: state.periods,
+      notes: state.notes,
+      settings: state.settings,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn("Cloud push failed (will retry on next change).", error);
+  }
+}
+
+async function cloudAuthToggle() {
+  if (!cloud.ready) {
+    showToast("云同步还没设置好，需要先填入 Firebase 配置。");
+    return;
+  }
+  const authMod = await import(`${FIREBASE_SDK}/firebase-auth.js`);
+  try {
+    if (cloud.user) {
+      await authMod.signOut(cloud.auth);
+      showToast("已退出登录。本机数据仍在。");
+    } else {
+      await authMod.signInWithPopup(cloud.auth, new authMod.GoogleAuthProvider());
+      showToast("已登录，数据开始同步。");
+    }
+  } catch (error) {
+    console.warn("Auth error", error);
+    showToast("登录没成功，请再试一次。");
+  }
+}
+
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./service-worker.js");
 }
 
 render();
+initCloud();

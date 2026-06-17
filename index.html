@@ -26,11 +26,40 @@
         <div class="app" id="app" aria-live="polite"></div>
 
         <nav class="bottom-nav" aria-label="Main navigation">
-          <button class="nav-item active" type="button" data-view="home">Home</button>
-          <button class="nav-item" type="button" data-view="log">Log</button>
-          <button class="nav-add" type="button" data-view="record" aria-label="Record">+</button>
-          <button class="nav-item" type="button" data-view="calendar">Calendar</button>
-          <button class="nav-item" type="button" data-view="settings">Settings</button>
+          <button class="nav-item active" type="button" data-view="home" aria-label="Home">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 11.4 12 4.5l8 6.9"/>
+              <path d="M6 10v8.2c0 .6.5 1.1 1.1 1.1h9.8c.6 0 1.1-.5 1.1-1.1V10"/>
+            </svg>
+          </button>
+          <button class="nav-item" type="button" data-view="log" aria-label="Log">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10 6.5h9"/><path d="M10 12h9"/><path d="M10 17.5h9"/>
+              <circle cx="5.2" cy="6.5" r="1.25" fill="currentColor" stroke="none"/>
+              <circle cx="5.2" cy="12" r="1.25" fill="currentColor" stroke="none"/>
+              <circle cx="5.2" cy="17.5" r="1.25" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+          <button class="nav-add" type="button" data-view="record" aria-label="Record">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 5.5v13"/><path d="M5.5 12h13"/>
+            </svg>
+          </button>
+          <button class="nav-item" type="button" data-view="calendar" aria-label="Calendar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3.8" y="5.2" width="16.4" height="15" rx="3.2"/>
+              <path d="M3.8 9.6h16.4"/>
+              <path d="M8.2 3.4v3.2"/><path d="M15.8 3.4v3.2"/>
+            </svg>
+          </button>
+          <button class="nav-item" type="button" data-view="settings" aria-label="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 8.5h8"/><path d="M16 8.5h4"/>
+              <circle cx="14" cy="8.5" r="2.1"/>
+              <path d="M4 15.5h4"/><path d="M12 15.5h8"/>
+              <circle cx="10" cy="15.5" r="2.1"/>
+            </svg>
+          </button>
         </nav>
       </section>
     </main>

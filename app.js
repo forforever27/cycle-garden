@@ -7,6 +7,7 @@ const initialState = {
   language: "zh",
   periods: [],
   notes: [],
+  deletedNoteIds: [],
   settings: {
     prepDays: 5,
     reminderTime: "09:00",
@@ -16,6 +17,7 @@ const initialState = {
 let state = loadState();
 let view = "home";
 let selectedSymptoms = new Set();
+let editingNoteId = null;
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
@@ -23,13 +25,15 @@ const toast = document.querySelector("#toast");
 document.querySelector(".bottom-nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-view]");
   if (!button) return;
+  editingNoteId = null; // switching tabs cancels any in-progress note edit
   view = button.dataset.view;
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   render();
 });
 
 app.addEventListener("click", (event) => {
-  const action = event.target.closest("[data-action]")?.dataset.action;
+  const actionEl = event.target.closest("[data-action]");
+  const action = actionEl?.dataset.action;
   const symptom = event.target.closest("[data-symptom]")?.dataset.symptom;
 
   if (symptom) {
@@ -41,7 +45,7 @@ app.addEventListener("click", (event) => {
   }
 
   if (!action) return;
-  actions[action]?.();
+  actions[action]?.(actionEl);
 });
 
 app.addEventListener("change", (event) => {
@@ -90,17 +94,44 @@ const actions = {
       showToast("没有要保存的内容。");
       return;
     }
-    state.notes.push({
-      id: crypto.randomUUID(),
-      date: getRecordDate(),
-      symptoms: [...selectedSymptoms],
-      note,
-      createdAt: new Date().toISOString(),
-    });
+    const now = new Date().toISOString();
+    const existing = editingNoteId && state.notes.find((item) => item.id === editingNoteId);
+    if (existing) {
+      existing.date = getRecordDate();
+      existing.symptoms = [...selectedSymptoms];
+      existing.note = note;
+      existing.updatedAt = now;
+    } else {
+      state.notes.push({
+        id: crypto.randomUUID(),
+        date: getRecordDate(),
+        symptoms: [...selectedSymptoms],
+        note,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    editingNoteId = null;
     selectedSymptoms = new Set();
     saveState();
-    showToast("备注已保存。");
+    showToast(existing ? "备注已更新。" : "备注已保存。");
     view = "log";
+    render();
+  },
+  "edit-note": (el) => {
+    editingNoteId = el.dataset.id;
+    view = "record";
+    render();
+  },
+  "delete-note": (el) => {
+    const id = el.dataset.id;
+    if (!state.notes.some((item) => item.id === id)) return;
+    if (!confirm("删除这条备注？")) return;
+    state.notes = state.notes.filter((item) => item.id !== id);
+    if (!state.deletedNoteIds.includes(id)) state.deletedNoteIds.push(id);
+    if (editingNoteId === id) editingNoteId = null;
+    saveState();
+    showToast("备注已删除。");
     render();
   },
   "save-settings": () => {
@@ -152,24 +183,61 @@ function renderHome() {
 }
 
 function renderRecord() {
-  document.querySelector("#recordDate").value = today();
+  const dateInput = document.querySelector("#recordDate");
+  const noteText = document.querySelector("#noteText");
+  const saveBtn = document.querySelector("[data-action='save-note']");
+  const heading = document.querySelector("[data-bind='recordTitle']");
+  const editing = editingNoteId && state.notes.find((item) => item.id === editingNoteId);
+
+  if (editing) {
+    dateInput.value = editing.date;
+    noteText.value = editing.note || "";
+    selectedSymptoms = new Set(editing.symptoms || []);
+    if (saveBtn) saveBtn.textContent = "更新备注";
+    if (heading) heading.textContent = "编辑这条备注";
+  } else {
+    editingNoteId = null;
+    dateInput.value = today();
+    selectedSymptoms = new Set();
+    if (saveBtn) saveBtn.textContent = "保存备注";
+  }
+  document.querySelectorAll("[data-symptom]").forEach((btn) => {
+    btn.classList.toggle("active", selectedSymptoms.has(btn.dataset.symptom));
+  });
 }
+
+const EDIT_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10.5-10.5a1.8 1.8 0 0 0 0-2.5l-1.5-1.5a1.8 1.8 0 0 0-2.5 0L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
+const TRASH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V5.2a1.2 1.2 0 0 1 1.2-1.2h3.6A1.2 1.2 0 0 1 15 5.2V7"/><path d="M6.5 7l.9 12.1a1.2 1.2 0 0 0 1.2 1.1h6.8a1.2 1.2 0 0 0 1.2-1.1L17.5 7"/></svg>`;
 
 function renderLog() {
   const timeline = document.querySelector("[data-bind='timeline']");
   const periodEvents = state.periods.map((period) => ({
+    type: "period",
     date: period.startDate,
     title: period.endDate ? `${formatDate(period.startDate)} - ${formatDate(period.endDate)}` : `Started ${formatDate(period.startDate)}`,
     text: period.endDate ? `${daysBetween(period.startDate, period.endDate) + 1} days recorded` : "Currently active",
   }));
   const noteEvents = state.notes.map((note) => ({
+    type: "note",
+    id: note.id,
     date: note.date,
     title: formatDate(note.date),
     text: [...note.symptoms, note.note].filter(Boolean).join(" · "),
   }));
   const items = [...periodEvents, ...noteEvents].sort((a, b) => new Date(b.date) - new Date(a.date));
   timeline.innerHTML = items.length
-    ? items.map((item) => `<article class="event glass"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.text)}</p></article>`).join("")
+    ? items.map((item) => item.type === "note"
+        ? `<article class="event glass">
+            <div class="event-head">
+              <h2>${escapeHtml(item.title)}</h2>
+              <div class="event-actions">
+                <button class="icon-btn" type="button" data-action="edit-note" data-id="${item.id}" aria-label="编辑备注">${EDIT_ICON}</button>
+                <button class="icon-btn" type="button" data-action="delete-note" data-id="${item.id}" aria-label="删除备注">${TRASH_ICON}</button>
+              </div>
+            </div>
+            <p>${escapeHtml(item.text) || "（空备注）"}</p>
+          </article>`
+        : `<article class="event glass"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.text)}</p></article>`).join("")
     : `<article class="event glass"><h2>还没有记录</h2><p>先按一次“月经来了”就可以开始。</p></article>`;
 }
 
@@ -398,6 +466,11 @@ function handleImportFile(file) {
 }
 
 function mergeImported(data) {
+  // Merge deletion tombstones first so a delete on one device sticks everywhere.
+  const incomingDeleted = Array.isArray(data.deletedNoteIds) ? data.deletedNoteIds : [];
+  const deleted = new Set([...(state.deletedNoteIds || []), ...incomingDeleted]);
+  state.deletedNoteIds = [...deleted];
+
   const periodIds = new Set(state.periods.map((period) => period.id));
   let periods = 0;
   data.periods.forEach((period) => {
@@ -408,15 +481,21 @@ function mergeImported(data) {
     }
   });
 
-  const noteIds = new Set(state.notes.map((note) => note.id));
+  // Notes: add new ones, take the newer copy on an edit (last-write-wins), skip deleted.
+  const localById = new Map(state.notes.map((note) => [note.id, note]));
   let notes = 0;
   data.notes.forEach((note) => {
-    if (note && note.date && !noteIds.has(note.id)) {
+    if (!note || !note.date || deleted.has(note.id)) return;
+    const existing = localById.get(note.id);
+    if (!existing) {
       state.notes.push(note);
-      noteIds.add(note.id);
+      localById.set(note.id, note);
       notes += 1;
+    } else if ((note.updatedAt || "") > (existing.updatedAt || "")) {
+      Object.assign(existing, note);
     }
   });
+  state.notes = state.notes.filter((note) => !deleted.has(note.id));
 
   if (data.settings && typeof data.settings === "object") {
     state.settings = { ...state.settings, ...data.settings };
@@ -503,6 +582,7 @@ async function pushCloud() {
     await cloud.fs.setDoc(cloud.docRef, {
       periods: state.periods,
       notes: state.notes,
+      deletedNoteIds: state.deletedNoteIds || [],
       settings: state.settings,
       updatedAt: new Date().toISOString(),
     });

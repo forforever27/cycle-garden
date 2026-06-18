@@ -454,6 +454,34 @@ textarea { resize: vertical; }
   font-size: 15px;
 }
 
+.event-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.event-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 248, 255, 0.66);
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+
 .event p,
 .body-copy {
   color: var(--muted);

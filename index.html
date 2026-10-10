@@ -5,238 +5,71 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#090912">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Cycle">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Cycle Garden</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="./icons/icon.svg">
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
     <link rel="manifest" href="./manifest.json">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
     <main class="shell">
-      <section class="phone">
-        <span class="ambient ambient-a"></span>
-        <span class="ambient ambient-b"></span>
+      <section class="phone" data-view="home">
+        <span class="ambient ambient-a" aria-hidden="true"></span>
+        <span class="ambient ambient-b" aria-hidden="true"></span>
         <span class="moon" aria-hidden="true"></span>
         <span class="stars" aria-hidden="true">
           <span></span><span></span><span></span><span></span><span></span>
         </span>
 
-        <div class="app" id="app" aria-live="polite"></div>
+        <div class="app view-home" id="app"></div>
 
         <nav class="bottom-nav" aria-label="Main navigation">
-          <button class="nav-item active" type="button" data-view="home" aria-label="Home">
+          <button class="nav-item active" type="button" data-view="home" aria-current="page">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4 11.4 12 4.5l8 6.9"/>
               <path d="M6 10v8.2c0 .6.5 1.1 1.1 1.1h9.8c.6 0 1.1-.5 1.1-1.1V10"/>
             </svg>
+            <span class="nav-label" data-label="nav.home">今天</span>
           </button>
-          <button class="nav-item" type="button" data-view="log" aria-label="Log">
+          <button class="nav-item" type="button" data-view="cycles">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10 6.5h9"/><path d="M10 12h9"/><path d="M10 17.5h9"/>
-              <circle cx="5.2" cy="6.5" r="1.25" fill="currentColor" stroke="none"/>
-              <circle cx="5.2" cy="12" r="1.25" fill="currentColor" stroke="none"/>
-              <circle cx="5.2" cy="17.5" r="1.25" fill="currentColor" stroke="none"/>
+              <path d="M5 19V13"/><path d="M10 19V7"/><path d="M15 19v-9"/><path d="M20 19V5"/>
             </svg>
+            <span class="nav-label" data-label="nav.cycles">周期</span>
           </button>
-          <button class="nav-add" type="button" data-view="record" aria-label="Record">
+          <button class="nav-add" type="button" data-action="open-day" aria-label="记录">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
               <path d="M12 5.5v13"/><path d="M5.5 12h13"/>
             </svg>
           </button>
-          <button class="nav-item" type="button" data-view="calendar" aria-label="Calendar">
+          <button class="nav-item" type="button" data-view="calendar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="3.8" y="5.2" width="16.4" height="15" rx="3.2"/>
               <path d="M3.8 9.6h16.4"/>
               <path d="M8.2 3.4v3.2"/><path d="M15.8 3.4v3.2"/>
             </svg>
+            <span class="nav-label" data-label="nav.calendar">日历</span>
           </button>
-          <button class="nav-item" type="button" data-view="settings" aria-label="Settings">
+          <button class="nav-item" type="button" data-view="settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4 8.5h8"/><path d="M16 8.5h4"/>
               <circle cx="14" cy="8.5" r="2.1"/>
               <path d="M4 15.5h4"/><path d="M12 15.5h8"/>
               <circle cx="10" cy="15.5" r="2.1"/>
             </svg>
+            <span class="nav-label" data-label="nav.settings">设置</span>
           </button>
         </nav>
+
+        <div class="sheet-root" id="sheetRoot"></div>
       </section>
     </main>
 
-    <template id="home-template">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Cycle check-in</p>
-          <h1 data-bind="greeting">晚安，Xy</h1>
-          <p class="subline">今天可以轻一点。Your body may want a softer pace.</p>
-        </div>
-        <button class="language-pill" type="button" data-action="toggle-language">中/EN</button>
-      </header>
-
-      <section class="cycle-card glass">
-        <div class="ring-layout">
-          <div class="ring" aria-label="Cycle progress">
-            <svg viewBox="0 0 120 120" aria-hidden="true">
-              <defs>
-                <linearGradient id="cycleGradient" x1="0" x2="1" y1="0" y2="1">
-                  <stop offset="0%" stop-color="#ff9bb8" />
-                  <stop offset="50%" stop-color="#b885ff" />
-                  <stop offset="100%" stop-color="#8db8ff" />
-                </linearGradient>
-              </defs>
-              <circle class="ring-track" cx="60" cy="60" r="45"></circle>
-              <circle class="ring-progress" cx="60" cy="60" r="45" data-bind-style="ring"></circle>
-            </svg>
-            <div class="ring-center">
-              <strong data-bind="cycleDay">--</strong>
-              <span>cycle day</span>
-            </div>
-          </div>
-
-          <div class="prediction">
-            <p class="eyebrow" data-bind="windowLabel">预计窗口 / predicted window</p>
-            <h2 data-bind="predictionWindow">资料还不够</h2>
-            <p data-bind="predictionCopy">记录开始和结束日期后，我会慢慢学你的节奏。</p>
-            <div class="confidence">
-              <span>confidence</span>
-              <span class="confidence-line"><span data-bind-style="confidence"></span></span>
-              <span data-bind="confidenceText">--</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="week-row" data-bind="weekRow"></div>
-
-        <div class="primary-grid">
-          <button class="primary-action start" type="button" data-action="start-period">
-            <strong>月经来了</strong>
-            <span>Period started</span>
-          </button>
-          <button class="primary-action end" type="button" data-action="end-period">
-            <strong>结束这次</strong>
-            <span>Period ended</span>
-          </button>
-        </div>
-      </section>
-
-      <section class="section-block">
-        <div class="section-title">
-          <h2>今天看一眼就好</h2>
-          <span>Just enough</span>
-        </div>
-        <div class="stat-grid">
-          <article class="stat glass">
-            <span>上次月经<br>Last period</span>
-            <strong data-bind="lastPeriod">No data</strong>
-            <small data-bind="lastPeriodMeta">Start once to begin.</small>
-          </article>
-          <article class="stat glass">
-            <span>平均周期<br>Average cycle</span>
-            <strong data-bind="averageCycle">--</strong>
-            <small>based on your data</small>
-          </article>
-          <article class="stat glass wide">
-            <span>Reminder</span>
-            <small data-bind="reminderText">Calendar sync will be connected in the cloud version.</small>
-          </article>
-        </div>
-      </section>
-    </template>
-
-    <template id="record-template">
-      <header class="page-header">
-        <p class="eyebrow">Quick record</p>
-        <h1 data-bind="recordTitle">今天记录什么？</h1>
-        <p class="subline">最懒也只需要按开始和结束。其他都可以不填。</p>
-      </header>
-
-      <section class="form-card glass">
-        <label>
-          日期 / Date
-          <input type="date" id="recordDate">
-        </label>
-        <div class="primary-grid">
-          <button class="primary-action start" type="button" data-action="start-period">月经来了</button>
-          <button class="primary-action end" type="button" data-action="end-period">结束这次</button>
-        </div>
-      </section>
-
-      <section class="form-card glass">
-        <h2>Optional notes</h2>
-        <div class="chips">
-          <button type="button" data-symptom="cramps">轻微腹痛 · cramps</button>
-          <button type="button" data-symptom="tired">很累 · tired</button>
-          <button type="button" data-symptom="mood">情绪波动 · mood</button>
-          <button type="button" data-symptom="sleep">睡不好 · sleep</button>
-        </div>
-        <textarea id="noteText" rows="4" placeholder="今天想补充什么..."></textarea>
-        <button class="soft-button" type="button" data-action="save-note">保存备注</button>
-      </section>
-    </template>
-
-    <template id="log-template">
-      <header class="page-header">
-        <p class="eyebrow">History</p>
-        <h1>最近记录</h1>
-      </header>
-      <section class="timeline" data-bind="timeline"></section>
-    </template>
-
-    <template id="calendar-template">
-      <header class="page-header">
-        <p class="eyebrow">Calendar</p>
-        <h1 data-bind="monthTitle">This month</h1>
-      </header>
-      <section class="calendar-card glass">
-        <div class="calendar-grid calendar-head">
-          <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-        </div>
-        <div class="calendar-grid" data-bind="calendarGrid"></div>
-      </section>
-    </template>
-
-    <template id="settings-template">
-      <header class="page-header">
-        <p class="eyebrow">Settings</p>
-        <h1>同步和提醒</h1>
-        <p class="subline">这版 PWA 先在本机完整运行。接 Supabase 后会多设备同步。</p>
-      </header>
-
-      <section class="form-card glass">
-        <label>
-          Prep reminder days
-          <input type="number" id="prepDays" min="1" max="14">
-        </label>
-        <label>
-          Reminder time
-          <input type="time" id="reminderTime">
-        </label>
-        <button class="soft-button" type="button" data-action="save-settings">保存设置</button>
-      </section>
-
-      <section class="form-card glass">
-        <h2>备份 Backup</h2>
-        <p class="body-copy">数据现在只存在这台设备的浏览器里。请定期导出一份 JSON 保存好；换设备或清了浏览器数据后，用「导入」就能还原。</p>
-        <button class="plain-button" type="button" data-action="export-data">导出本地数据</button>
-        <button class="plain-button" type="button" data-action="import-data">导入 / 恢复数据</button>
-        <input type="file" id="importFile" accept="application/json,.json" hidden>
-      </section>
-
-      <section class="form-card glass">
-        <h2>云同步 Cloud sync</h2>
-        <p class="body-copy" data-bind="cloudStatus">本机模式：数据只存在这台设备。</p>
-        <button class="soft-button" type="button" data-action="cloud-auth">云同步未设置</button>
-      </section>
-
-      <section class="form-card glass">
-        <h2>Google Calendar</h2>
-        <p class="body-copy">正式云端版会用 Google OAuth 建立 Calendar reminders。不会再靠 Apps Script 网页慢慢跑。</p>
-        <button class="plain-button" type="button" data-action="calendar-ics">下载提醒 .ics</button>
-      </section>
-    </template>
-
-    <div class="toast" id="toast" role="status"></div>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./app.js" type="module"></script>
   </body>
 </html>

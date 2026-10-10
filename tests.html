@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cycle Garden tests</title>
+<style>
+  body { margin: 0; padding: 24px 16px; background: #10101d; color: #fff8ff; font: 14px/1.5 ui-sans-serif, system-ui, "Segoe UI", sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  #summary { margin: 0 0 18px; font-weight: 600; }
+  .pass { color: #8be0a8; } .fail { color: #ff9b9b; }
+  li { margin: 2px 0; } code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: rgba(255,248,255,.7); }
+</style>
+</head>
+<body>
+<h1>Cycle Garden · core.js tests</h1>
+<p id="summary">Running…</p>
+<ol id="results"></ol>
+<script type="module">
+import * as core from "./core.js";
+
+const results = [];
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function test(name, fn) {
+  try {
+    const detail = fn();
+    results.push({ name, ok: detail === true || detail === undefined, detail: detail === true || detail === undefined ? "" : String(detail) });
+  } catch (error) {
+    results.push({ name, ok: false, detail: error.message });
+  }
+}
+function expect(actual, expected) {
+  if (!eq(actual, expected)) throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+}
+
+// Builds a state from [start, end] pairs. end "" = open period.
+function history(pairs, extra = {}) {
+  const s = core.emptyState();
+  s.periods = pairs.map(([start, end], i) => ({ id: `p${i}`, startDate: start, endDate: end || "", cycleMode: "auto", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }));
+  return { ...s, ...extra };
+}
+const sample = [["2026-03-02","2026-03-07"],["2026-04-05","2026-04-10"],["2026-05-01","2026-05-06"],["2026-06-12","2026-06-18"],["2026-07-15","2026-07-20"],["2026-08-29","2026-09-03"]];
+
+// ---------- dates ----------
+test("addDays crosses month and year", () => { expect(core.addDays("2026-12-30", 3), "2027-01-02"); });
+test("daysBetween counts calendar days", () => { expect(core.daysBetween("2026-02-27", "2026-03-02"), 3); });
+test("isIso rejects junk", () => { expect([core.isIso("2026-10-11"), core.isIso("11/10/2026"), core.isIso(""), core.isIso(null)], [true, false, false, false]); });
+
+// ---------- normalize / migration ----------
+test("v1 state migrates: updatedAt falls back to createdAt, tombstone array added", () => {
+  const v1 = { language: "zh", periods: [{ id: "a", startDate: "2026-09-01", endDate: "", createdAt: "2026-09-01T01:00:00Z" }], notes: [], deletedNoteIds: [], settings: { prepDays: 5, reminderTime: "09:00" } };
+  const s = core.normalize(v1);
+  expect([s.schema, s.periods[0].updatedAt, s.deletedPeriodIds, s.periods[0].cycleMode], [2, "2026-09-01T01:00:00Z", [], "auto"]);
+});
+test("normalize keeps a broken period (end before start) so it can be fixed, and reports it", () => {
+  const s = core.normalize({ periods: [{ id: "x", startDate: "2026-10-05", endDate: "2026-09-01" }] });
+  expect([s.periods.length, core.findProblems(s, "2026-10-11")[0].code], [1, "err.endBeforeStart"]);
+});
+test("normalize drops records whose id is tombstoned", () => {
+  const s = core.normalize({ periods: [{ id: "x", startDate: "2026-10-05" }], deletedPeriodIds: ["x"] });
+  expect(s.periods.length, 0);
+});
+test("normalize clamps prepDays and survives garbage", () => {
+  expect([core.normalize({ settings: { prepDays: 99 } }).settings.prepDays, core.normalize("nope").periods.length], [14, 0]);
+});
+
+// ---------- merge (the sync bug from the audit) ----------
+test("an end date set on device B survives a merge on device A that still has the period open", () => {
+  const a = history([["2026-10-01", ""]]);
+  const b = history([["2026-10-01", "2026-10-06"]]);
+  b.periods[0].updatedAt = "2026-10-06T08:00:00Z";
+  const merged = core.mergeStates(a, b).state;
+  expect(merged.periods[0].endDate, "2026-10-06");
+});
+test("the newer edit wins in either merge direction", () => {
+  const older = history([["2026-10-01", "2026-10-05"]]);
+  const newer = history([["2026-10-02", "2026-10-05"]]);
+  newer.periods[0].updatedAt = "2026-10-08T00:00:00Z";
+  expect([core.mergeStates(older, newer).state.periods[0].startDate, core.mergeStates(newer, older).state.periods[0].startDate], ["2026-10-02", "2026-10-02"]);
+});
+test("a delete on one device sticks even if the other device still has the period", () => {
+  const a = core.deletePeriod(history([["2026-10-01", "2026-10-05"]]), "p0");
+  const b = history([["2026-10-01", "2026-10-05"]]);
+  expect([core.mergeStates(a, b).state.periods.length, core.mergeStates(b, a).state.periods.length], [0, 0]);
+});
+test("merge counts new records and never drops local ones", () => {
+  const a = history([["2026-09-01", "2026-09-05"]]);
+  const b = history([["2026-10-01", "2026-10-05"]]);
+  b.periods[0].id = "other";
+  const { state, added } = core.mergeStates(a, b);
+  expect([state.periods.length, added.periods], [2, 1]);
+});
+test("settings: last write wins; language stays per device", () => {
+  const a = { ...core.emptyState(), language: "en", settings: { prepDays: 3, reminderTime: "09:00", updatedAt: "2026-10-01T00:00:00Z" } };
+  const b = { ...core.emptyState(), language: "zh", settings: { prepDays: 7, reminderTime: "20:00", updatedAt: "2026-10-02T00:00:00Z" } };
+  const s = core.mergeStates(a, b).state;
+  expect([s.settings.prepDays, s.language], [7, "en"]);
+});
+test("deleted notes stay deleted after merge", () => {
+  let a = core.emptyState();
+  a = core.saveNote(a, { id: "n1", date: "2026-10-01", note: "hi" }).state;
+  const b = core.deleteNote(a, "n1");
+  expect(core.mergeStates(a, b).state.notes.length, 0);
+});
+
+// ---------- validation ----------
+test("end before start is refused (the bug the audit reproduced)", () => {
+  const s = history([["2026-10-05", ""]]);
+  expect(core.validatePeriod(s.periods, { ...s.periods[0], endDate: "2026-09-01" }, "2026-10-11"), "err.endBeforeStart");
+});
+test("future start and future end are refused", () => {
+  expect([core.validatePeriod([], { id: "n", startDate: "2026-10-12", endDate: "" }, "2026-10-11"),
+          core.validatePeriod([], { id: "n", startDate: "2026-10-10", endDate: "2026-10-12" }, "2026-10-11")], ["err.startFuture", "err.endFuture"]);
+});
+test("a second open period is refused", () => {
+  const s = history([["2026-10-01", ""]]);
+  expect(core.validatePeriod(s.periods, { id: "n", startDate: "2026-10-09", endDate: "" }, "2026-10-11"), "err.openExists");
+});
+test("overlapping periods are refused, touching-but-separate ones are fine", () => {
+  const s = history([["2026-09-01", "2026-09-05"]]);
+  expect([core.validatePeriod(s.periods, { id: "n", startDate: "2026-09-04", endDate: "2026-09-08" }, "2026-10-11"),
+          core.validatePeriod(s.periods, { id: "n", startDate: "2026-09-06", endDate: "2026-09-08" }, "2026-10-11")], ["err.overlap", null]);
+});
+test("editing a period does not collide with itself", () => {
+  const s = history([["2026-09-01", "2026-09-05"]]);
+  expect(core.validatePeriod(s.periods, { ...s.periods[0], endDate: "2026-09-06" }, "2026-10-11"), null);
+});
+test("endPeriod with nothing open says so", () => {
+  expect(core.endPeriod(history([["2026-09-01", "2026-09-05"]]), "2026-09-07").error, "err.noOpen");
+});
+test("an empty note is refused; clearing an existing note deletes it", () => {
+  let s = core.emptyState();
+  const first = core.saveNote(s, { date: "2026-10-01", note: "" });
+  s = core.saveNote(s, { id: "n1", date: "2026-10-01", pain: 3 }).state;
+  const cleared = core.saveNote(s, { id: "n1", date: "2026-10-01", pain: null });
+  expect([first.error, cleared.deleted, cleared.state.notes.length, cleared.state.deletedNoteIds], ["err.noteEmpty", true, 0, ["n1"]]);
+});
+
+// ---------- prediction (12 sample histories) ----------
+test("H1 empty history: status empty", () => { expect(core.getStatus(core.emptyState(), "2026-10-11").kind, "empty"); });
+test("H2 one period: learning, no window", () => {
+  const s = core.getStatus(history([["2026-10-01", "2026-10-05"]]), "2026-10-11");
+  expect([s.kind, s.cycleDay], ["learning", 11]);
+});
+test("H3 two periods (1 cycle) is still 'not enough data' (brief §6)", () => {
+  expect(core.predict(history([["2026-08-01", "2026-08-05"], ["2026-08-31", "2026-09-04"]])).level, "none");
+});
+test("H3b three periods (cycles 30, 32): rough window widened ±3 = 27..35 days", () => {
+  const p = core.predict(history([["2026-07-02", "2026-07-06"], ["2026-08-01", "2026-08-05"], ["2026-09-02", "2026-09-06"]]));
+  expect([p.level, p.earliest, p.latest], ["rough", "2026-09-29", "2026-10-07"]);
+});
+test("H4 audit sample (34,26,42,33,45): window is shortest..longest = 24 Sep – 13 Oct", () => {
+  const p = core.predict(history(sample));
+  expect([p.level, p.min, p.max, p.earliest, p.latest, p.steady], ["recent", 26, 45, "2026-09-24", "2026-10-13", false]);
+});
+test("H4 on 8 Oct is inside the window (day 15 of 20), not past it", () => {
+  const s = core.getStatus(history(sample), "2026-10-08");
+  expect([s.kind, s.windowDay, s.windowLength], ["window", 15, 20]);
+});
+test("H5 regular 28-day cycles: steady, 1-day window", () => {
+  const p = core.predict(history([["2026-05-01","2026-05-05"],["2026-05-29","2026-06-02"],["2026-06-26","2026-06-30"],["2026-07-24","2026-07-28"]]));
+  expect([p.steady, p.earliest, p.latest], [true, "2026-08-21", "2026-08-21"]);
+});
+test("H6 only the last 6 cycles count (an older 45-day cycle drops out)", () => {
+  const starts = ["2025-01-01", "2025-02-15"]; // 45 days: not a missed log (< 2x 30), so only slice(-6) removes it
+  for (let i = 0; i < 6; i += 1) starts.push(core.addDays(starts.at(-1), 30));
+  const s = history(starts.map((a) => [a, core.addDays(a, 4)]));
+  const p = core.predict(s);
+  expect([core.getCycles(s)[0].length, core.getCycles(s)[0].counted, p.count, p.min, p.max], [45, true, 6, 30, 30]);
+});
+test("H7 a missed log (cycle ≥ 2× median) is auto-excluded", () => {
+  const s = history([["2026-01-01","2026-01-05"],["2026-01-29","2026-02-02"],["2026-02-26","2026-03-02"],["2026-03-26","2026-03-30"],["2026-05-21","2026-05-25"]]);
+  const cycles = core.getCycles(s);
+  expect([cycles.at(-1).length, cycles.at(-1).counted, cycles.at(-1).autoExcluded, core.predict(s).max], [56, false, true, 28]);
+});
+test("H8 the user can force a cycle back in", () => {
+  const s = history([["2026-01-01","2026-01-05"],["2026-01-29","2026-02-02"],["2026-02-26","2026-03-02"],["2026-03-26","2026-03-30"],["2026-05-21","2026-05-25"]]);
+  s.periods[3].cycleMode = "include"; // the period that starts the 56-day cycle
+  expect(core.predict(s).max, 56);
+});
+test("H9 back-filled older period: prediction uses the date-latest period", () => {
+  const s = history([["2026-08-01","2026-08-05"],["2026-08-31","2026-09-04"],["2026-07-02","2026-07-06"]]);
+  expect(core.predict(s).last.startDate, "2026-08-31");
+});
+test("H10 open period: status period with day count; long flag after day 10", () => {
+  const s = history([["2026-09-01","2026-09-05"],["2026-10-01",""]]);
+  const a = core.getStatus(s, "2026-10-03");
+  const b = core.getStatus(s, "2026-10-12");
+  expect([a.kind, a.day, a.long, b.long], ["period", 3, false, true]);
+});
+test("H11 states move waiting → prep → window → late", () => {
+  const s = history([["2026-05-01","2026-05-05"],["2026-05-29","2026-06-02"],["2026-06-26","2026-06-30"],["2026-07-24","2026-07-28"]]);
+  // window 2026-08-21 only, prepDays 5 → prep from 08-16
+  expect(["2026-08-10","2026-08-15","2026-08-16","2026-08-17","2026-08-20","2026-08-21","2026-08-22","2026-08-25"].map((d) => core.getStatus(s, d).kind),
+         ["waiting","waiting","prep","prep","prep","window","late","late"]);
+  expect(core.getStatus(s, "2026-08-25").daysLate, 4);
+});
+test("H12 a rough window has a 14-day floor and is at least 7 days wide", () => {
+  const p = core.predict(history([["2026-08-22","2026-08-24"],["2026-09-01","2026-09-03"],["2026-09-11","2026-09-13"]]));
+  expect([core.daysBetween("2026-09-11", p.earliest), core.daysBetween(p.earliest, p.latest) + 1], [14, 7]);
+});
+test("H13 repeated long cycles are a real pattern, never auto-excluded (28,28,28,70,70,70)", () => {
+  const starts = ["2026-01-01"];
+  [28, 28, 28, 70, 70, 70].forEach((n) => starts.push(core.addDays(starts.at(-1), n)));
+  const s = history(starts.map((a) => [a, core.addDays(a, 4)]));
+  const p = core.predict(s);
+  expect([core.getCycles(s).every((c) => c.counted), p.min, p.max, core.healthFlags(s, starts.at(-1)).includes("flag.long")], [true, 28, 70, true]);
+});
+test("H15 a 70 next to a 90 is a repeated long pattern: both count and flag", () => {
+  const starts = ["2026-01-01"];
+  [28, 28, 28, 70, 28, 28, 90].forEach((n) => starts.push(core.addDays(starts.at(-1), n)));
+  const s = history(starts.map((a) => [a, core.addDays(a, 4)]));
+  expect([core.getCycles(s).every((c) => c.counted), core.healthFlags(s, starts.at(-1)).includes("flag.long")], [true, true]);
+});
+test("H14 two similar long cycles (61, 62) both count", () => {
+  const starts = ["2026-01-01"];
+  [30, 30, 30, 30, 61, 62].forEach((n) => starts.push(core.addDays(starts.at(-1), n)));
+  expect(core.predict(history(starts.map((a) => [a, core.addDays(a, 4)]))).max, 62);
+});
+
+// ---------- day classification ----------
+test("dayInfo: predicted days only in the future and only when nothing is open", () => {
+  const s = history(sample);
+  const p = core.predict(s);
+  expect([core.dayInfo(s, "2026-10-10", "2026-10-08", p).predicted, core.dayInfo(s, "2026-10-01", "2026-10-08", p).predicted, core.dayInfo(s, "2026-09-01", "2026-10-08", p).period], [true, false, true]);
+});
+
+// ---------- insights and flags ----------
+test("stats for the audit sample", () => {
+  expect(core.getStats(history(sample)), { cycleCount: 5, shortest: 26, longest: 45, average: 36, periodAverage: 6 });
+});
+test("flag: long cycles twice in the last six", () => { expect(core.healthFlags(history(sample), "2026-10-08").includes("flag.long"), true); });
+test("flag: no period for 90 days", () => { expect(core.healthFlags(history([["2026-06-01","2026-06-05"]]), "2026-09-01").includes("flag.absent"), true); });
+test("flag: one long bleed is not a pattern, two are", () => {
+  const one = history([["2026-07-01","2026-07-05"],["2026-08-01","2026-08-10"],["2026-09-01","2026-09-05"]]);
+  const two = history([["2026-07-01","2026-07-10"],["2026-08-01","2026-08-10"],["2026-09-01","2026-09-05"]]);
+  expect([core.healthFlags(one, "2026-09-10").includes("flag.longBleed"), core.healthFlags(two, "2026-09-10").includes("flag.longBleed")], [false, true]);
+});
+test("flag: pain 4+ in two of the last three periods", () => {
+  let s = history([["2026-07-01","2026-07-05"],["2026-08-01","2026-08-05"],["2026-09-01","2026-09-05"]]);
+  s = core.saveNote(s, { date: "2026-08-02", pain: 4 }).state;
+  s = core.saveNote(s, { date: "2026-09-02", pain: 5 }).state;
+  expect(core.healthFlags(s, "2026-09-10").includes("flag.pain"), true);
+});
+test("no flags for a calm regular history", () => {
+  const s = history([["2026-05-01","2026-05-05"],["2026-05-29","2026-06-02"],["2026-06-26","2026-06-30"],["2026-07-24","2026-07-28"]]);
+  expect(core.healthFlags(s, "2026-08-01"), []);
+});
+
+// ---------- .ics ----------
+test(".ics: the four discreet names only, stable UIDs, window spans earliest..latest, alarms at reminder time", () => {
+  const ics = core.buildIcs(history(sample), new Date("2026-09-05T00:00:00Z"), "2026-09-05");
+  const titles = [...new Set([...ics.matchAll(/SUMMARY:(.*)/g)].map((m) => m[1]))].sort();
+  expect([titles, ics.includes("UID:window-20260924@cycle-garden"), ics.includes("DTEND;VALUE=DATE:20261014"),
+          ics.includes("DTSTART;VALUE=DATE:20260919"), ics.includes("FREQ=DAILY;INTERVAL=2;UNTIL=20261013"), ics.includes("TRIGGER;RELATED=START:PT9H0M"),
+          ics.includes("UID:checkin-after-20260924@cycle-garden"), ics.endsWith("END:VCALENDAR\r\n")],
+         [["Body check-in", "Personal prep", "Personal window", "Restock essentials"], true, true, true, true, true, true, true]);
+});
+test(".ics: a 1-day window still gets the day-after check-in; past prep is skipped; restock never on 29-31", () => {
+  const regular = history([["2026-05-01","2026-05-05"],["2026-05-29","2026-06-02"],["2026-06-26","2026-06-30"],["2026-07-24","2026-07-28"]]);
+  const ics = core.buildIcs(regular, new Date(), "2026-08-18");
+  const restockDay = Number(ics.match(/UID:restock@cycle-garden\r\nDTSTAMP:\S+\r\nDTSTART;VALUE=DATE:(\d{8})/)[1].slice(6));
+  expect([ics.includes("UID:checkin-after-20260821@cycle-garden\r\nDTSTAMP"), ics.includes("DTSTART;VALUE=DATE:20260822"), ics.includes("Personal prep"), restockDay <= 28],
+         [true, true, false, true]);
+});
+test(".ics: after the window has passed, only a check-in tomorrow (no past events)", () => {
+  const ics = core.buildIcs(history(sample), new Date(), "2026-10-20");
+  expect([ics.includes("Personal window"), ics.includes("DTSTART;VALUE=DATE:20261021")], [false, true]);
+});
+test(".ics: nothing while a period is open", () => {
+  expect(core.buildIcs(history([["2026-09-01","2026-09-05"],["2026-10-01",""]])).includes("VEVENT"), false);
+});
+test("flag: spotting counts episodes, not days", () => {
+  let s = history([["2026-07-01","2026-07-05"],["2026-08-01","2026-08-05"],["2026-09-01","2026-09-05"]]);
+  s = core.saveNote(s, { date: "2026-07-15", flow: "spotting" }).state;
+  s = core.saveNote(s, { date: "2026-07-16", flow: "spotting" }).state;
+  const one = core.healthFlags(s, "2026-09-10").includes("flag.spotting");
+  s = core.saveNote(s, { date: "2026-08-18", flow: "spotting" }).state;
+  expect([one, core.healthFlags(s, "2026-09-10").includes("flag.spotting")], [false, true]);
+});
+test("flag: an open period past day 7 counts toward long bleeding", () => {
+  const s = history([["2026-07-01","2026-07-10"],["2026-08-01","2026-08-05"],["2026-09-01",""]]);
+  expect(core.healthFlags(s, "2026-09-15").includes("flag.longBleed"), true);
+});
+
+// ---------- T1 audit follow-ups ----------
+test("end date survives in both directions even after the other device edits the start date", () => {
+  const a = core.normalize(history([["2026-10-01", ""]]));
+  const b = core.endPeriod(a, "2026-10-06", "2026-10-06T08:00:00Z").state;
+  const a2 = core.savePeriod(a, { ...a.periods[0], startDate: "2026-09-30" }, "2026-10-07T08:00:00Z").state;
+  const ab = core.mergeStates(a2, b).state.periods[0];
+  const ba = core.mergeStates(b, a2).state.periods[0];
+  expect([ab.startDate, ab.endDate, ba.startDate, ba.endDate], ["2026-09-30", "2026-10-06", "2026-09-30", "2026-10-06"]);
+});
+test("same timestamp, different values: both devices converge on the same copy", () => {
+  const a = core.normalize(history([["2026-10-01", ""]]));
+  const b = core.normalize(history([["2026-10-01", "2026-10-05"]]));
+  const ab = core.mergeStates(a, b).state; const ba = core.mergeStates(b, a).state;
+  expect([ab.periods[0].endDate, ba.periods[0].endDate], ["2026-10-05", "2026-10-05"]);
+});
+test("note edits merge both directions; note deletes stick both directions", () => {
+  const a = core.saveNote(core.emptyState(), { id: "n1", date: "2026-10-01", note: "old" }, "2026-10-01T00:00:00Z").state;
+  const b = core.saveNote(a, { id: "n1", date: "2026-10-01", note: "new" }, "2026-10-02T00:00:00Z").state;
+  const del = core.deleteNote(a, "n1");
+  expect([core.mergeStates(a, b).state.notes[0].note, core.mergeStates(b, a).state.notes[0].note, core.mergeStates(b, del).state.notes.length, core.mergeStates(del, b).state.notes.length], ["new", "new", 0, 0]);
+});
+test("two devices each start a period before syncing: the newer one can be ended, the older stays reported until fixed", () => {
+  const s = core.normalize(history([["2026-09-28", ""], ["2026-10-02", ""]]));
+  const ended = core.endPeriod(s, "2026-10-06");
+  const after = ended.state;
+  const fixed = core.savePeriod(after, { ...after.periods.find((p) => p.id === "p0"), endDate: "2026-10-01" }).state;
+  expect([ended.error, core.findProblems(s, "2026-10-08").map((p) => p.code), core.findProblems(after, "2026-10-11").map((p) => [p.id, p.code]),
+          core.openPeriod(after), core.getStatus(after, "2026-10-11").kind === "period", core.startPeriod(after, "2026-10-10").error, core.findProblems(fixed, "2026-10-11")],
+         [null, ["err.staleOpen"], [["p0", "err.staleOpen"]], null, false, null, []]);
+});
+test("a closed period added inside an open one is allowed, and the open one is then reported", () => {
+  const s = core.normalize(history([["2026-10-01", ""]]));
+  const r = core.savePeriod(s, { startDate: "2026-10-04", endDate: "2026-10-06" });
+  expect([r.error, core.findProblems(r.state, "2026-10-11").map((p) => [p.id, p.code])], [null, [["p0", "err.staleOpen"]]]);
+});
+test("an open period overlapping a later closed one that starts the same day is reported as stale", () => {
+  const s = core.normalize({ periods: [{ id: "a", startDate: "2026-10-04", endDate: "" }, { id: "b", startDate: "2026-10-04", endDate: "2026-10-06" }] });
+  expect(core.findProblems(s, "2026-10-11").map((p) => [p.id, p.code]), [["a", "err.staleOpen"]]);
+});
+test("two closed periods that overlap: the later one is reported as overlap", () => {
+  const s = core.normalize({ periods: [{ id: "a", startDate: "2026-10-01", endDate: "2026-10-05" }, { id: "b", startDate: "2026-10-03", endDate: "2026-10-07" }] });
+  expect(core.findProblems(s, "2026-10-11").map((p) => [p.id, p.code]), [["b", "err.overlap"]]);
+});
+test("same-day race: both devices tap Start on the same day; the app is not stuck", () => {
+  const s = core.normalize({ periods: [{ id: "bbb", startDate: "2026-10-02", endDate: "" }, { id: "aaa", startDate: "2026-10-02", endDate: "" }] });
+  const reversed = core.normalize({ periods: [...s.periods].reverse() });
+  const ended = core.endPeriod(s, "2026-10-06");
+  expect([core.openPeriod(s).id, core.openPeriod(reversed).id, ended.error, core.getStatus(ended.state, "2026-10-11").kind === "period",
+          core.findProblems(ended.state, "2026-10-11").map((p) => [p.id, p.code])],
+         ["bbb", "bbb", null, false, [["aaa", "err.staleOpen"]]]);
+});
+test("merge of distinct records gives identical data in both directions (no sync ping-pong)", () => {
+  const a = core.normalize({ periods: [{ id: "x", startDate: "2026-08-01", endDate: "2026-08-05" }], notes: [{ id: "m", date: "2026-08-02", note: "a" }], deletedPeriodIds: ["q"], deletedNoteIds: ["z"] });
+  const b = core.normalize({ periods: [{ id: "y", startDate: "2026-09-01", endDate: "2026-09-05" }], notes: [{ id: "n", date: "2026-09-02", note: "b" }], deletedPeriodIds: ["p"], deletedNoteIds: ["w"] });
+  const ab = core.mergeStates(a, b).state; const ba = core.mergeStates(b, a).state;
+  expect([core.sameData(ab, ba), core.sameData(core.mergeStates(ab, ba).state, ab), ab.periods.map((x) => x.id), ab.deletedPeriodIds], [true, true, ["x", "y"], ["p", "q"]]);
+});
+test("an open candidate that starts before an existing period is refused as stale", () => {
+  const s = history([["2026-09-01", "2026-09-05"]]);
+  expect(core.validatePeriod(s.periods, { id: "n", startDate: "2026-08-20", endDate: "" }, "2026-10-11"), "err.staleOpen");
+});
+test("note tie (same updatedAt, different text) converges in both directions", () => {
+  const a = core.normalize({ notes: [{ id: "n", date: "2026-09-02", note: "aaa", updatedAt: "2026-09-02T00:00:00Z" }] });
+  const b = core.normalize({ notes: [{ id: "n", date: "2026-09-02", note: "bbb", updatedAt: "2026-09-02T00:00:00Z" }] });
+  expect(core.sameData(core.mergeStates(a, b).state, core.mergeStates(b, a).state), true);
+});
+test("id-less notes that differ only in symptoms or pain stay separate", () => {
+  const a = { notes: [{ date: "2026-09-02", symptoms: ["cramps"] }] };
+  const b = { notes: [{ date: "2026-09-02", symptoms: ["tired"] }, { date: "2026-09-02", pain: 3 }] };
+  expect(core.mergeStates(a, b).state.notes.length, 3);
+});
+test("a stale open period does not count as bleeding until today", () => {
+  const s = history([["2026-07-01","2026-07-10"],["2026-08-01",""],["2026-08-29","2026-09-02"]]);
+  expect(core.healthFlags(s, "2026-10-11").includes("flag.longBleed"), false);
+});
+test(".ics: late-state check-in keeps one UID across days; restock moves off day 29-31", () => {
+  const s = history(sample);
+  const a = core.buildIcs(s, new Date(), "2026-10-20"); const b = core.buildIcs(s, new Date(), "2026-10-25");
+  const uid = (ics) => ics.match(/UID:(checkin-after-[^@]+)@/)[1];
+  // earliest 24 Sep, prepDays 5 → restock would be 17 Sep; with prepDays 1 it is 21 Sep; force day 30 via a custom earliest
+  const late = history([["2026-07-01","2026-07-05"],["2026-08-02","2026-08-06"],["2026-09-03","2026-09-07"],["2026-10-05","2026-10-09"]]);
+  late.settings.prepDays = 3; // earliest = 2026-11-06 → restock 2026-11-01 (fine) ; try prepDays 6 → 2026-10-29 → clamp 28
+  late.settings.prepDays = 6;
+  const restock = core.buildIcs(late, new Date(), "2026-10-10").match(/UID:restock@cycle-garden\r\nDTSTAMP:\S+\r\nDTSTART;VALUE=DATE:(\d{8})/)[1];
+  expect([uid(a) === uid(b), restock], [true, "20261028"]);
+});
+test("findProblems reports old overlaps, future end dates and unreadable end dates", () => {
+  const s = core.normalize({ periods: [
+    { id: "a", startDate: "2026-09-01", endDate: "2026-09-06" },
+    { id: "b", startDate: "2026-09-04", endDate: "2026-09-08" },
+    { id: "c", startDate: "2026-10-01", endDate: "2026-10-20" },
+    { id: "d", startDate: "2026-08-01", endDate: "soon" } ] });
+  expect(core.findProblems(s, "2026-10-11").map((p) => [p.id, p.code]).sort(), [["b", "err.overlap"], ["c", "err.endFuture"], ["d", "err.endInvalid"]]);
+});
+test("an unreadable end date does not silently reopen the period", () => {
+  const s = core.normalize({ periods: [{ id: "d", startDate: "2026-08-01", endDate: "soon" }] });
+  expect([s.periods[0].endDate, core.openPeriod(s)], ["2026-08-01", null]);
+});
+test("v1 migration keeps notes and their symptoms", () => {
+  const s = core.normalize({ periods: [], notes: [{ id: "n", date: "2026-09-02", symptoms: ["cramps"], note: "ok", createdAt: "x", updatedAt: "x" }] });
+  expect([s.notes.length, s.notes[0].symptoms, s.notes[0].flow, s.notes[0].pain], [1, ["cramps"], "", null]);
+});
+test("badEnd converges in both merge directions and is not counted as a 1-day period", () => {
+  const bad = core.normalize({ periods: [{ id: "x", startDate: "2026-08-01", endDate: "soon" }] });
+  const good = core.normalize({ periods: [{ id: "x", startDate: "2026-08-01", endDate: "2026-08-01" }] });
+  expect([core.sameData(core.mergeStates(good, bad).state, core.mergeStates(bad, good).state), core.getStats(bad).periodAverage], [true, null]);
+});
+test("non-string end dates are treated as unreadable, not as open", () => {
+  const s = core.normalize({ periods: [{ id: "x", startDate: "2026-08-01", endDate: 20261005 }] });
+  expect([s.periods[0].badEnd, core.openPeriod(s)], [true, null]);
+});
+test("id-less notes with different content on the same date keep separate ids; same note in two files merges to one", () => {
+  const a = { notes: [{ date: "2026-09-02", note: "from A" }] };
+  const b = { notes: [{ date: "2026-09-02", note: "from B" }] };
+  const b2 = { notes: [{ date: "2026-09-01", note: "other" }, { date: "2026-09-02", note: "from A" }] };
+  expect([core.mergeStates(a, b).state.notes.length, core.mergeStates(a, b2).state.notes.length], [2, 2]);
+});
+test("isIso rejects impossible dates like 30 Feb", () => { expect([core.isIso("2026-02-30"), core.isIso("2026-04-31"), core.isIso("2024-02-29")], [false, false, true]); });
+test("records without ids get the same id on every device (no duplicate on merge)", () => {
+  const raw = { periods: [{ startDate: "2026-09-01", endDate: "2026-09-05" }], notes: [{ date: "2026-09-02", note: "x" }] };
+  const m = core.mergeStates(raw, raw).state;
+  expect([core.sameData(raw, raw), m.periods.length, m.notes.length], [true, 1, 1]);
+});
+test("editing keeps createdAt and only re-stamps the field that changed", () => {
+  const s = core.normalize(history([["2026-09-01", "2026-09-05"]]));
+  const r = core.savePeriod(s, { id: "p0", startDate: "2026-09-01", endDate: "2026-09-06" }, "2026-10-01T00:00:00Z").period;
+  expect([r.createdAt, r.t.startDate, r.t.endDate], ["2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "2026-10-01T00:00:00Z"]);
+});
+
+// ---------- report ----------
+const passed = results.filter((r) => r.ok).length;
+const summary = document.querySelector("#summary");
+summary.textContent = `${passed === results.length ? "PASS" : "FAIL"} ${passed}/${results.length}`;
+summary.className = passed === results.length ? "pass" : "fail";
+document.title = summary.textContent;
+document.querySelector("#results").innerHTML = results.map((r) =>
+  `<li class="${r.ok ? "pass" : "fail"}">${r.ok ? "✓" : "✗"} ${r.name}${r.detail ? ` <code>${r.detail.replace(/</g, "&lt;")}</code>` : ""}</li>`).join("");
+window.testResults = { passed, total: results.length, failed: results.filter((r) => !r.ok) };
+</script>
+</body>
+</html>

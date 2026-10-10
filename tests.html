@@ -18,6 +18,8 @@
 <ol id="results"></ol>
 <script type="module">
 import * as core from "./core.js";
+import * as report from "./report.js";
+import { isValidPin } from "./lock.js";
 
 const results = [];
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -342,7 +344,7 @@ test("merge of distinct records gives identical data in both directions (no sync
 });
 test("an open candidate that starts before an existing period is refused as stale", () => {
   const s = history([["2026-09-01", "2026-09-05"]]);
-  expect(core.validatePeriod(s.periods, { id: "n", startDate: "2026-08-20", endDate: "" }, "2026-10-11"), "err.staleOpen");
+  expect(core.validatePeriod(s.periods, { id: "n", startDate: "2026-08-20", endDate: "" }, "2026-10-11"), "err.pastNeedsEnd");
 });
 test("note tie (same updatedAt, different text) converges in both directions", () => {
   const a = core.normalize({ notes: [{ id: "n", date: "2026-09-02", note: "aaa", updatedAt: "2026-09-02T00:00:00Z" }] });
@@ -400,6 +402,23 @@ test("id-less notes with different content on the same date keep separate ids; s
   const b2 = { notes: [{ date: "2026-09-01", note: "other" }, { date: "2026-09-02", note: "from A" }] };
   expect([core.mergeStates(a, b).state.notes.length, core.mergeStates(a, b2).state.notes.length], [2, 2]);
 });
+test("a log for a future day is refused", () => {
+  expect(core.saveNote(core.emptyState(), { date: core.addDays(core.todayIso(), 1), note: "x" }).error, "err.dateFuture");
+});
+test("CSV: one row per period and log, formulas neutralised, quotes escaped", () => {
+  const st = core.normalize({ periods: [{ id: "a", startDate: "2026-03-02", endDate: "2026-03-07" }, { id: "b", startDate: "2026-04-01", endDate: "2026-03-20" }],
+    notes: [{ id: "n", date: "2026-03-03", symptoms: [], note: '=1+1, "x"', pain: 3 }] });
+  const lines = report.buildCsv(st, (k) => k).replace(/^\uFEFF/, "").trim().split("\r\n");
+  expect(lines.length, 4);
+  expect(lines[2].endsWith(`"'=1+1, ""x"""`), true);
+  expect(lines[3].split(",")[2], ""); // an end before the start is not printed as a date
+});
+test("summary escapes user text and has no script", () => {
+  const st = core.normalize({ periods: [{ id: "a", startDate: "2026-03-02", endDate: "2026-03-07" }], notes: [{ id: "n", date: "2026-03-03", symptoms: ["<b>x</b>"], note: "" }] });
+  const html = report.buildSummaryHtml(st, { t: (k) => k, fmtLong: (d) => d, lang: "en" }, "2026-03-10");
+  expect([html.includes("<b>x</b>"), html.includes("&lt;b&gt;x&lt;/b&gt;"), /<script/i.test(html)], [false, true, false]);
+});
+test("PIN must be 4-6 digits", () => { expect(["123", "1234", "123456", "1234567", "12a4", ""].map(isValidPin), [false, true, true, false, false, false]); });
 test("isIso rejects impossible dates like 30 Feb", () => { expect([core.isIso("2026-02-30"), core.isIso("2026-04-31"), core.isIso("2024-02-29")], [false, false, true]); });
 test("records without ids get the same id on every device (no duplicate on merge)", () => {
   const raw = { periods: [{ startDate: "2026-09-01", endDate: "2026-09-05" }], notes: [{ date: "2026-09-02", note: "x" }] };

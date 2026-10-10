@@ -5,8 +5,8 @@
   --bg: #090912;
   --surface: #17152a;
   --ink: #fff8ff;
-  --muted: rgba(255, 248, 255, 0.76);
-  --soft: rgba(255, 248, 255, 0.62);
+  --muted: rgba(255, 248, 255, 0.84);
+  --soft: rgba(255, 248, 255, 0.74);
   --faint: rgba(255, 248, 255, 0.16);
   --line: rgba(255, 255, 255, 0.14);
   --glass: rgba(255, 255, 255, 0.075);
@@ -69,20 +69,17 @@ h1:focus { outline: none; }
 
 /* The page-level moon used to sit on top of headings; it now lives inside the Home top bar. */
 .moon { display: none; }
+/* A real crescent: the lit disc is masked by an offset circle, so the sky shows through. */
 .moon-inline {
-  position: relative;
   flex-shrink: 0;
   width: 30px;
   height: 30px;
   margin-top: 6px;
   border-radius: 999px;
-  background: radial-gradient(circle at 33% 28%, #fff 0 18%, rgba(255, 245, 221, 0.82) 30%, rgba(255, 197, 168, 0.52) 62%, transparent 70%);
-  box-shadow: 0 0 26px rgba(255, 197, 168, 0.3);
-  overflow: hidden;
-}
-.moon-inline::after {
-  position: absolute; top: -3px; left: 9px; width: 30px; height: 30px; content: "";
-  border-radius: inherit; background: #1a1630;
+  background: radial-gradient(circle at 30% 35%, #fffaf0 0 35%, #ffe3c8 60%, #ffc5a8 100%);
+  -webkit-mask: radial-gradient(circle at 72% 32%, transparent 0 11px, #000 12px);
+  mask: radial-gradient(circle at 72% 32%, transparent 0 11px, #000 12px);
+  filter: drop-shadow(0 0 10px rgba(255, 197, 168, 0.45));
 }
 
 .stars { position: absolute; inset: 78px 34px auto 34px; height: 210px; pointer-events: none; }
@@ -95,7 +92,7 @@ h1:focus { outline: none; }
 .stars span:nth-child(3) { top: 118px; left: 8%; width: 2px; height: 2px; }
 .stars span:nth-child(4) { top: 160px; left: 88%; }
 .stars span:nth-child(5) { top: 200px; left: 60%; width: 2px; height: 2px; }
-.phone:not([data-view="home"]) .stars { opacity: 0.4; }
+.phone:not([data-view="home"]) .stars { display: none; }
 
 .app {
   position: relative;
@@ -106,6 +103,9 @@ h1:focus { outline: none; }
   scrollbar-width: none;
 }
 .app::-webkit-scrollbar { display: none; }
+/* keyboard focus never lands under the floating nav or the calendar's sticky bar */
+.app { scroll-padding: 16px 0 calc(112px + env(safe-area-inset-bottom)); }
+.app.view-calendar { scroll-padding-top: 200px; }
 
 .eyebrow { margin: 0 0 6px; color: var(--soft); font-size: 12px; letter-spacing: 0.02em; }
 .body-copy, .help { color: var(--muted); font-size: 13px; line-height: 1.55; }
@@ -132,8 +132,10 @@ h1:focus { outline: none; }
   background: var(--grad);
   box-shadow: 0 18px 40px rgba(184, 133, 255, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.38);
 }
+/* dark ink on the gradient: white on it was 2.1-2.8:1 */
+.primary-action { color: #1a1430; }
 .primary-action strong { font-size: 17px; }
-.primary-action span { color: rgba(255, 248, 255, 0.86); font-size: 12px; }
+.primary-action span { color: rgba(26, 20, 48, 0.8); font-size: 12px; }
 .primary-action.compact { min-height: 52px; }
 
 .soft-button, .plain-button, .danger-button {
@@ -144,20 +146,18 @@ h1:focus { outline: none; }
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 248, 255, 0.9);
 }
-.soft-button.accent { border-color: transparent; background: var(--grad); color: #fff; font-weight: 600; }
-.soft-button.small { min-height: 40px; padding: 0 14px; font-size: 13px; }
+.soft-button.accent { border-color: transparent; background: var(--grad); color: #1a1430; font-weight: 600; }
+.soft-button.small { min-height: 44px; padding: 0 14px; font-size: 13px; }
 .plain-button { background: transparent; }
 .danger-button { border-color: rgba(255, 155, 184, 0.45); background: transparent; color: var(--rose); }
 .soft-button:disabled, .plain-button:disabled { opacity: 0.5; }
 
 .text-button {
   min-height: 44px;
-  padding: 0 4px;
+  padding: 0 6px;
   color: var(--lilac);
   font-size: 13px;
-  text-decoration: underline;
-  text-decoration-color: rgba(217, 194, 255, 0.4);
-  text-underline-offset: 3px;
+  font-weight: 600;
 }
 .text-button.center { justify-self: center; }
 
@@ -169,6 +169,7 @@ h1:focus { outline: none; }
 .icon-btn svg { width: 18px; height: 18px; }
 
 .chips, .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.form-card .button-row > * { flex: 1 1 140px; }
 .chip {
   min-height: 44px;
   padding: 0 15px;
@@ -194,11 +195,11 @@ h1:focus { outline: none; }
   border-radius: 16px;
   background: rgba(0, 0, 0, 0.18);
 }
-.segmented button { min-height: 42px; border: 1px solid transparent; border-radius: 12px; color: rgba(255, 248, 255, 0.85); }
+.segmented button { min-height: 44px; border: 1px solid transparent; border-radius: 12px; color: rgba(255, 248, 255, 0.85); }
 
 /* ---------- home ---------- */
 
-.topbar { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
+.topbar { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
 .topbar > div:first-child { flex: 1; min-width: 0; }
 .language-pill {
   min-width: 48px;
@@ -215,9 +216,9 @@ h1:focus { outline: none; }
 
 .cycle-card {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   justify-items: center;
-  padding: 20px 18px 18px;
+  padding: 18px 16px 16px;
   border-radius: 32px;
 }
 
@@ -230,13 +231,14 @@ h1:focus { outline: none; }
 .problem-banner .link { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; white-space: nowrap; }
 .problem-banner svg { width: 16px; height: 16px; }
 
-.ring-wrap { position: relative; width: min(250px, 70vw); aspect-ratio: 1; }
+.ring-wrap { position: relative; width: min(196px, 54vw); aspect-ratio: 1; }
 .ring-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .ring-svg circle { fill: none; }
-.ring-track { stroke: rgba(255, 255, 255, 0.1); stroke-width: 14; }
-.ring-window { stroke: rgba(184, 133, 255, 0.42); stroke-width: 24; }
-.ring-elapsed { stroke: url("#ringGrad"); stroke-width: 6; stroke-linecap: round; opacity: 0.7; }
-.ring-period { stroke: var(--rose); stroke-width: 14; stroke-linecap: round; filter: drop-shadow(0 0 10px rgba(255, 155, 184, 0.5)); }
+/* One stroke width, three meanings: faint track = the cycle, lilac-blue = likely window,
+   rose = period days. The white dot is today. (Clue ring, in the v04 palette.) */
+.ring-track { stroke: rgba(255, 255, 255, 0.11); stroke-width: 14; }
+.ring-window { stroke: rgba(141, 184, 255, 0.75); stroke-width: 14; }
+.ring-period { stroke: var(--rose); stroke-width: 14; filter: drop-shadow(0 0 10px rgba(255, 155, 184, 0.45)); }
 .ring-svg .ring-today { fill: #fff; stroke: #1b1830; stroke-width: 3; filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.7)); }
 
 .ring-center {
@@ -250,7 +252,16 @@ h1:focus { outline: none; }
   text-align: center;
 }
 .ring-label { color: var(--soft); font-size: 12px; }
-.ring-head { font-size: 20px; line-height: 1.22; text-wrap: balance; }
+.ring-head { font-size: 19px; line-height: 1.22; text-wrap: balance; }
+
+.facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
+.fact {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, 0.06);
+  color: var(--ink); font-size: 13px; text-decoration: none;
+}
+.fact-label { color: var(--soft); font-size: 12px; }
+.fact.link { min-height: 44px; }
 
 .status-sub { max-width: 34ch; color: var(--muted); font-size: 13px; line-height: 1.5; text-align: center; }
 .range-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; }
@@ -265,11 +276,11 @@ h1:focus { outline: none; }
 .how { max-width: 40ch; color: var(--soft); font-size: 12.5px; line-height: 1.55; text-align: center; }
 
 .notice {
-  display: grid; gap: 10px; width: 100%; padding: 12px 14px;
-  border: 1px solid rgba(255, 197, 168, 0.4); border-radius: 16px; background: rgba(255, 197, 168, 0.1);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 10px 10px 14px;
+  border-radius: 18px; background: rgba(255, 197, 168, 0.12);
 }
 .notice p, .notice-text { color: var(--peach); font-size: 13px; line-height: 1.5; }
-.notice .soft-button { justify-self: start; }
+.notice .soft-button { flex-shrink: 0; }
 
 .week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; width: 100%; }
 .date-pill {
@@ -287,10 +298,15 @@ h1:focus { outline: none; }
 .date-pill small { font-size: 11px; }
 .date-pill strong { color: var(--ink); font-size: 15px; }
 .date-pill.period { border-color: transparent; background: linear-gradient(160deg, rgba(255, 155, 184, 0.55), rgba(184, 133, 255, 0.4)); color: #fff; }
-.date-pill.predicted { border: 1.5px dashed rgba(255, 155, 184, 0.7); background: rgba(255, 155, 184, 0.08); }
+.date-pill.predicted { background: rgba(184, 133, 255, 0.16); }
+.date-pill.predicted::before {
+  position: absolute; top: 5px; left: 50%; width: 6px; height: 6px; content: ""; transform: translateX(-50%);
+  border-radius: 999px; background: linear-gradient(135deg, var(--rose), var(--violet));
+}
 .date-pill.today { border: 2px solid rgba(255, 255, 255, 0.85); }
+.date-pill.today.predicted { background: rgba(184, 133, 255, 0.24); }
 .date-pill.has-note::after {
-  position: absolute; bottom: 6px; width: 5px; height: 5px; content: "";
+  position: absolute; bottom: 4px; width: 5px; height: 5px; content: "";
   border-radius: 999px; background: var(--lilac);
 }
 .date-pill:disabled strong { color: rgba(255, 248, 255, 0.7); }
@@ -303,6 +319,9 @@ h1:focus { outline: none; }
 .done-tag { color: #b9f0cf; font-size: 12px; font-weight: 600; }
 
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.recent-card { padding: 16px 0 4px; border-radius: 24px; }
+.recent-card h2 { margin: 0 16px 8px; font-size: 15px; }
+.recent-card .note-list { border-top: 0; }
 .stat { display: grid; align-content: start; gap: 4px; min-height: 104px; padding: 16px; border-radius: 24px; }
 .stat span, .stat small { color: var(--muted); font-size: 12px; line-height: 1.4; }
 .stat strong { margin: 6px 0 2px; font-size: 21px; }
@@ -323,13 +342,21 @@ h1:focus { outline: none; }
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-bottom: 0;
   border-radius: 28px 28px 0 0;
-  background: linear-gradient(180deg, #221d3b, var(--surface) 140px);
+  background: var(--surface);
   box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.5);
+  scrollbar-width: none;
   animation: sheet-in 220ms ease-out;
 }
+.sheet.no-anim { animation: none; }
 @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.sheet::-webkit-scrollbar { display: none; }
 .sheet-handle { width: 40px; height: 4px; margin: 4px auto 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.25); }
-.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.sheet-head {
+  position: sticky; top: -8px; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 -20px 14px; padding: 8px 20px 10px;
+  background: var(--surface);
+}
 .sheet-head h2 { font-size: 19px; }
 .sheet-head h2:focus { outline: none; }
 .sheet-body { display: grid; gap: 18px; }
@@ -338,10 +365,30 @@ h1:focus { outline: none; }
 .sheet-section h3 small { margin-left: 6px; color: var(--soft); font-size: 12px; font-weight: 400; }
 .sheet-status { color: var(--muted); font-size: 14px; }
 .sheet-status.period-on { color: var(--rose); font-weight: 600; }
-.date-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.date-chips .chip { padding: 0 13px; font-size: 14px; }
-.date-other { display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: 12px; }
-.date-other input { width: auto; min-height: 44px; padding: 8px 10px; }
+/* One row of date chips that scrolls sideways, ending with the "earlier day" picker chip. */
+.date-chips {
+  display: flex; gap: 8px; margin: 0 -20px; padding: 2px 20px 6px;
+  overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 20px; scrollbar-width: none;
+}
+.date-chips::-webkit-scrollbar { display: none; }
+.date-chips .chip { flex-shrink: 0; padding: 0 14px; font-size: 14px; scroll-snap-align: start; }
+.flow-chips { display: grid; grid-template-columns: repeat(4, 1fr); }
+.flow-chips .chip { padding: 0 6px; }
+
+/* Formatted date label over a transparent native date input. */
+.date-shell {
+  position: relative; display: flex; align-items: center; min-height: 44px; padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 16px; background: rgba(255, 255, 255, 0.09);
+  color: var(--ink); font-size: 15px;
+}
+.date-shell input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.date-shell:focus-within { outline: 2px solid #fff; outline-offset: 2px; }
+.date-shell input:focus { opacity: 1; padding: 0 12px; border-radius: inherit; background: var(--surface); color: var(--ink); }
+.date-shell.is-disabled { opacity: 0.45; }
+.date-chip { border-radius: 999px; font-size: 14px; }
+.date-chip.is-pressed { border-color: rgba(255, 190, 220, 0.6); background: linear-gradient(135deg, rgba(255, 155, 184, 0.42), rgba(184, 133, 255, 0.36)); font-weight: 600; }
+.add-row { display: flex; gap: 8px; }
+.add-row input { flex: 1; }
 .sheet-actions { display: grid; gap: 10px; margin-top: 4px; }
 .form-error {
   padding: 10px 12px; border-radius: 14px; background: rgba(255, 197, 168, 0.12);
@@ -353,6 +400,7 @@ h1:focus { outline: none; }
 input, textarea {
   width: 100%;
   min-height: 44px;
+  font-size: 16px; /* below 16px, iOS zooms the page when a field gets focus */
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.09);
@@ -363,7 +411,14 @@ input:disabled { opacity: 0.45; }
 textarea { resize: vertical; }
 textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 .check { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--muted); font-size: 14px; }
-.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(--violet); }
+.check input {
+  appearance: none; flex-shrink: 0; width: 24px; height: 24px; min-height: 0; padding: 0; margin: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.4); border-radius: 8px; background: rgba(255, 255, 255, 0.06); cursor: pointer;
+}
+.check input:checked {
+  border-color: transparent;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 16px no-repeat, var(--grad);
+}
 
 /* ---------- pages ---------- */
 
@@ -384,17 +439,27 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 
 /* cycles */
 .chart { width: 100%; height: auto; overflow: visible; }
-.chart-band { fill: rgba(184, 133, 255, 0.18); }
+.chart-band { fill: rgba(141, 184, 255, 0.14); }
 .chart-base { stroke: rgba(255, 255, 255, 0.2); stroke-width: 1; }
 .chart-bar { fill: var(--violet); }
+.chart-bar.atypical { fill: var(--peach); }
 .chart-bar.excluded { fill: rgba(255, 255, 255, 0.14); stroke: rgba(255, 255, 255, 0.4); stroke-dasharray: 3 3; }
-.chart-value { fill: var(--ink); font-size: 12px; font-weight: 600; }
-.chart-axis { fill: var(--soft); font-size: 12px; }
-.chart-legend { display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: 12px; }
+.chart-value { fill: var(--ink); font-size: 13px; font-weight: 600; }
+.chart-axis { fill: var(--soft); font-size: 13px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; color: var(--soft); font-size: 12px; }
+.chart-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .swatch { display: inline-block; width: 14px; height: 10px; border-radius: 3px; }
-.swatch.band { background: rgba(184, 133, 255, 0.35); }
+.swatch.band { background: rgba(141, 184, 255, 0.4); }
+.swatch.atypical { background: var(--peach); }
+.swatch.excluded { border: 1px dashed rgba(255, 255, 255, 0.6); }
+.sym-summary { display: grid; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); }
+.sym-summary h3 { margin-top: 10px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.sym-counts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.sym-counts li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; }
+.sym-counts span { color: var(--soft); font-size: 12px; }
 .mini-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0; }
-.mini-stats div { display: grid; gap: 2px; }
+.mini-stats div { display: grid; grid-template-rows: auto auto; align-content: start; gap: 2px; }
+.mini-stats dt { white-space: nowrap; }
 .mini-stats dt { color: var(--soft); font-size: 12px; }
 .mini-stats dd { margin: 0; font-size: 15px; font-weight: 600; }
 .flags-card { border-color: rgba(255, 197, 168, 0.35); }
@@ -405,6 +470,8 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 .event { display: grid; gap: 7px; padding: 16px; border-radius: 22px; }
 .event p { color: var(--muted); font-size: 13px; line-height: 1.55; }
 .cycle-row { overflow: hidden; border-radius: 22px; }
+/* the row clips its children, so their focus ring is drawn inside */
+.cycle-row button:focus-visible { outline-offset: -3px; border-radius: 20px; }
 .cycle-main {
   position: relative;
   display: grid;
@@ -415,14 +482,15 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 }
 .cycle-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .cycle-title strong { font-size: 15px; }
+.cycle-year { color: var(--soft); font-size: 11px; letter-spacing: 0.04em; }
 .cycle-meta { color: var(--muted); font-size: 13px; }
 .badge {
   padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px;
   color: var(--soft); font-size: 11px;
 }
 .badge.warn { border-color: rgba(255, 197, 168, 0.5); color: var(--peach); }
-.dot-strip { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
-.dot-strip i { width: 6px; height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
+.dot-strip { display: flex; gap: 2px; margin-top: 4px; overflow: hidden; }
+.dot-strip i { flex: 0 1 6px; min-width: 2px; height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
 .dot-strip i.on { background: var(--rose); }
 .row-chevron { position: absolute; top: 50%; right: 14px; color: var(--soft); transform: translateY(-50%); }
 .row-chevron svg { width: 18px; height: 18px; }
@@ -432,28 +500,45 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
   color: var(--muted); font-size: 13px; text-align: left;
 }
 .note-list .note-date { flex-shrink: 0; color: var(--soft); }
-.note-list .more { padding: 4px 16px 6px; color: var(--soft); font-size: 12px; }
+.note-list button.more { color: var(--lilac); font-weight: 600; }
+.note-list button.marked .note-date { color: var(--rose); }
 
 /* calendar */
+/* Full-bleed app bar: it sticks below the page's top padding, and its ::before covers that
+   padding so days never scroll visibly above it. */
 .calendar-sticky {
   position: sticky;
-  top: -1px;
+  top: 0;
   z-index: 3;
   display: grid;
   gap: 10px;
-  margin-bottom: 14px;
-  padding: 12px 12px 10px;
-  border-radius: 20px;
-  background: rgba(24, 21, 42, 0.92);
+  margin: 0 -20px 14px;
+  padding: 10px 20px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: #16142a;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.calendar-sticky .page-header { margin-bottom: 2px; }
+.calendar-sticky::before {
+  position: absolute; right: 0; bottom: 100%; left: 0; height: 60px; content: ''; background: #16142a;
 }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
 .legend li { display: inline-flex; align-items: center; gap: 6px; }
 .key { display: inline-block; width: 14px; height: 14px; border-radius: 5px; }
 .key.period { background: linear-gradient(135deg, var(--rose), var(--violet)); }
-.key.predict { border: 1.5px dashed rgba(255, 155, 184, 0.8); }
+.key.predict { position: relative; background: rgba(184, 133, 255, 0.16); }
+.key.predict::after {
+  position: absolute; top: 4px; left: 4px; width: 6px; height: 6px; content: "";
+  border-radius: 999px; background: linear-gradient(135deg, var(--rose), var(--violet));
+}
 .key.today { border: 2px solid #fff; }
-.key.note { width: 6px; height: 6px; margin: 0 4px; border-radius: 999px; background: var(--lilac); }
+.key.note { width: 12px; height: 3px; margin: 0 1px; border-radius: 999px; background: var(--lilac); }
 .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.calendar-grid.days { column-gap: 0; }
+.calendar-grid.days .calendar-day { margin: 0 3px; }
 .calendar-head { color: var(--soft); font-size: 12px; text-align: center; }
 .months { display: grid; gap: 24px; }
 .month h2 { margin: 0 0 10px 4px; font-size: 15px; }
@@ -468,13 +553,24 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
   font-size: 14px;
 }
 .calendar-day.blank { min-height: 0; }
-.calendar-day.period { background: linear-gradient(135deg, rgba(255, 155, 184, 0.55), rgba(184, 133, 255, 0.35)); color: #fff; font-weight: 600; }
-.calendar-day.predict { border: 1.5px dashed rgba(255, 155, 184, 0.75); background: rgba(255, 155, 184, 0.07); }
+.calendar-day.period { background: linear-gradient(180deg, rgba(255, 155, 184, 0.58), rgba(184, 133, 255, 0.42)); color: #fff; font-weight: 600; }
+.calendar-day.predict { background: rgba(184, 133, 255, 0.14); }
+.calendar-day.predict::before {
+  position: absolute; top: 5px; width: 6px; height: 6px; content: "";
+  border-radius: 999px; background: linear-gradient(135deg, var(--rose), var(--violet));
+}
+/* a run of period (or likely) days reads as one band across the week row */
+.calendar-grid.days .calendar-day.period:not(.run-start),
+.calendar-grid.days .calendar-day.predict:not(.run-start) { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.calendar-grid.days .calendar-day.period:not(.run-end),
+.calendar-grid.days .calendar-day.predict:not(.run-end) { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .calendar-day.today { border: 2px solid #fff; font-weight: 700; }
 .calendar-day.has-note::after {
-  position: absolute; bottom: 4px; width: 5px; height: 5px; content: "";
+  position: absolute; bottom: 5px; width: 12px; height: 3px; content: "";
   border-radius: 999px; background: var(--lilac);
 }
+/* today keeps a whole rounded ring even in the middle of a band */
+.calendar-grid.days .calendar-day.today { border-radius: 13px; }
 .calendar-day:disabled { color: rgba(255, 248, 255, 0.55); }
 
 /* ---------- nav ---------- */
@@ -518,7 +614,7 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
   border-radius: 999px;
   background: linear-gradient(135deg, var(--rose), var(--violet), var(--blue));
   box-shadow: 0 0 30px rgba(184, 133, 255, 0.62);
-  color: #fff;
+  color: #1a1430;
 }
 .nav-add svg { width: 26px; height: 26px; }
 .phone.sheet-open .bottom-nav { visibility: hidden; }
@@ -556,6 +652,8 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 }
 
 @media (max-width: 360px) {
+  .calendar-sticky { margin: 0 -14px 14px; padding: 10px 14px; }
+  .calendar-grid.days .calendar-day { margin: 0 2px; }
   .field-row { grid-template-columns: 1fr; }
   .mini-stats { grid-template-columns: 1fr 1fr; }
   .app { padding-inline: 14px; }
@@ -599,7 +697,9 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
     column-gap: 30px;
   }
   .app.view-home .topbar { grid-column: 1 / -1; }
-  .app.view-home .cycle-card { grid-column: 1; }
+  .app.view-home .cycle-card { grid-column: 1; grid-row: 2; }
+  .app.view-home .ring-wrap { width: 190px; }
+  .app.view-home .facts { display: none; } /* the stat cards beside it already show both */
   .app.view-home .section-block { grid-column: 2; margin-top: 0; }
 
   .app.view-cycles > *, .app.view-calendar > *, .app.view-settings > * { max-width: 620px; margin-left: auto; margin-right: auto; }
@@ -615,3 +715,24 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
   .sheet-handle { display: none; }
   .toast { bottom: 32px; }
 }
+
+
+/* ---------- privacy lock ---------- */
+
+.lock-root { position: absolute; inset: 0; z-index: 30; background: radial-gradient(120% 60% at 50% 0%, #2a2346, var(--bg) 70%); }
+.lock-screen { display: grid; justify-items: center; align-content: center; gap: 18px; height: 100%; padding: 32px 24px; }
+.lock-mark { width: 40px; height: 40px; }
+.lock-screen h1 { margin: 0; font-size: 22px; }
+.lock-dots { display: flex; gap: 14px; min-height: 14px; }
+.lock-dots i { width: 14px; height: 14px; border: 1.5px solid var(--muted); border-radius: 999px; }
+.lock-dots i.on { border-color: transparent; background: var(--grad); }
+.lock-dots.shake { animation: lock-shake 360ms ease; }
+@keyframes lock-shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+.lock-status { min-height: 2.6em; max-width: 300px; margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
+.lock-pad { display: grid; grid-template-columns: repeat(3, 72px); gap: 14px 22px; }
+.lock-pad button {
+  width: 72px; height: 72px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--glass); color: var(--ink); font-size: 26px; font-weight: 500;
+}
+.lock-pad button:active { background: rgba(255, 255, 255, 0.16); }
+.lock-forgot { min-height: 44px; }

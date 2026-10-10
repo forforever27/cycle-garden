@@ -1,3 +1,5 @@
+import * as report from "./report.js";
+import * as pinLock from "./lock.js";
 import * as core from "./core.js";
 import { t, setLang, getLang, other, fmtShort, fmtLong, fmtDay, fmtWeekday, fmtMonth, greetingKey } from "./i18n.js";
 import { firebaseConfig } from "./firebase-config.js";
@@ -6,6 +8,8 @@ import { firebaseConfig } from "./firebase-config.js";
 // it is first rewritten in the v2 shape.
 const STORAGE_KEY = "xy-period-tracker-pwa-v1";
 const BACKUP_KEY = "xy-period-tracker-pwa-v1-backup-before-v2";
+// The Google account the records on this device were last synced with (see onAuthStateChanged).
+const OWNER_KEY = "cycle-garden-owner-uid";
 const PREP_ITEMS = ["pads", "liners", "relief"];
 
 const app = document.querySelector("#app");
@@ -111,6 +115,7 @@ function renderNav() {
   });
   document.querySelectorAll("[data-label]").forEach((node) => { node.textContent = t(node.dataset.label); });
   document.querySelector(".nav-add").setAttribute("aria-label", t("nav.add"));
+  document.querySelector(".bottom-nav").setAttribute("aria-label", t("nav.main"));
 }
 
 function setView(next) {
@@ -189,18 +194,12 @@ function ringSvg(st, pred, today) {
     if (pred.level !== "none" && st.kind !== "period") {
       parts.push(arc(core.daysBetween(last.startDate, pred.earliest), core.daysBetween(last.startDate, pred.latest) + 1, "ring-window"));
     }
-    parts.push(arc(0, st.cycleDay, "ring-elapsed"));
     const bleedDays = core.periodLength(last) ?? Math.min(st.cycleDay, core.daysBetween(last.startDate, today) + 1);
     parts.push(arc(0, bleedDays, "ring-period"));
     const angle = frac(st.cycleDay - 0.5) * 2 * Math.PI;
     parts.push(`<circle class="ring-today" cx="${(120 + R * Math.cos(angle)).toFixed(1)}" cy="${(120 + R * Math.sin(angle)).toFixed(1)}" r="8"/>`);
   }
   return `<svg class="ring-svg" viewBox="0 0 240 240" aria-hidden="true">
-      <defs>
-        <linearGradient id="ringGrad" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0%" stop-color="#ff9bb8"/><stop offset="55%" stop-color="#b885ff"/><stop offset="100%" stop-color="#8db8ff"/>
-        </linearGradient>
-      </defs>
       <g transform="rotate(-90 120 120)">${parts.join("")}</g>
     </svg>`;
 }
@@ -217,13 +216,16 @@ function renderWeek(today, pred) {
   }).join("");
 }
 
+function prepDone() {
+  const key = core.latestPeriod(state)?.startDate || "";
+  return state.prep.cycleStart === key ? state.prep.done.filter((item) => PREP_ITEMS.includes(item)) : [];
+}
+
 function prepCard(st) {
-  const last = core.latestPeriod(state);
-  const key = last?.startDate || "";
-  const done = state.prep.cycleStart === key ? state.prep.done : [];
+  const done = prepDone();
   const emphasis = ["prep", "window", "late"].includes(st.kind);
   const allDone = PREP_ITEMS.every((item) => done.includes(item));
-  return `<article class="prep-card glass${emphasis ? " emphasis" : ""}">
+  return `<article class="prep-card glass${emphasis ? " emphasis" : ""}" id="prepKit" tabindex="-1">
       <div class="card-head"><h2>${t("prep.title")}</h2>${allDone ? `<span class="done-tag">${t("prep.done")}</span>` : ""}</div>
       <div class="chips">${PREP_ITEMS.map((item) => `<button class="chip" type="button" data-action="prep-toggle" data-value="${item}" aria-pressed="${done.includes(item)}">${t(`prep.${item}`)}</button>`).join("")}</div>
     </article>`;
@@ -276,10 +278,13 @@ function renderHome() {
         </div>
         <p class="how" id="howText" ${showHow ? "" : "hidden"}>${how}</p>` : ""}
       ${st.kind === "period" && st.long ? `<div class="notice"><p>${t("status.period.long")}</p><button class="soft-button small" type="button" data-action="edit-period" data-id="${esc(st.open.id)}">${t("status.period.fix")}</button></div>` : ""}
-      <button class="primary-action" type="button" data-action="${open ? "end-period" : "start-period"}">
+      <div class="facts">
+        <span class="fact"><span class="fact-label">${t("stat.last")}</span> ${last ? esc(fmtShort(last.startDate)) : t("stat.none")}${last && core.periodLength(last) ? ` · ${t("stats.days", { n: core.periodLength(last) })}` : ""}</span>
+        <a class="fact link" href="#prepKit" data-action="goto-prep"><span class="fact-label">${t("prep.title")}</span> ${prepDone().length}/${PREP_ITEMS.length}</a>
+      </div>
+      <button class="primary-action" type="button" data-action="${open ? "end-period" : "start-period"}" aria-label="${t(primaryKey)}">
         <strong>${t(primaryKey)}</strong><span lang="${langAttr(other())}">${t(primaryKey, {}, other())}</span>
       </button>
-      <button class="text-button center" type="button" data-action="open-day">${t("action.logOther")}</button>
       <div class="week-row" role="group" aria-label="${t("week.label")}">${renderWeek(today, pred)}</div>
     </section>
 
@@ -297,29 +302,108 @@ function renderHome() {
           <small>${pred.level !== "none" ? `${t("stats.average")} ${t("stats.days", { n: stats.average })}` : t("stat.needMore")}</small>
         </article>
       </div>
+      ${recentLogs()}
     </section>`;
+}
+
+// The last three day logs, newest first. Empty until something is logged.
+function recentLogs() {
+  const notes = [...state.notes].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 3);
+  if (!notes.length) return "";
+  return `<article class="recent-card glass" aria-labelledby="recentTitle">
+      <h2 id="recentTitle">${t("recent.title")}</h2>
+      <ul class="note-list">${notes.map((n) => `<li><button type="button" data-action="open-day" data-date="${n.date}"><span class="note-date">${esc(fmtShort(n.date))}</span><span>${esc(noteSummary(n))}</span></button></li>`).join("")}</ul>
+    </article>`;
 }
 
 // ---------- sheets (day log + period editor) ----------
 
+// Symptoms typed by the user (anything not in the built-in list) from logs in the last 90 days
+// plus the open sheet, so they can be reused; an old one drops off once nothing recent uses it.
+function customSymptoms() {
+  const since = core.addDays(core.todayIso(), -90);
+  const recent = state.notes.filter((n) => n.date >= since).flatMap((n) => n.symptoms);
+  const all = new Set([...recent, ...(sheet?.symptoms || [])]);
+  return [...all].filter((s) => !core.SYMPTOMS.includes(s)).sort();
+}
+
+// A typed symptom that matches a built-in label (in either language) becomes that built-in.
+function symptomKey(text) {
+  const lower = text.toLowerCase();
+  return core.SYMPTOMS.find((key) => [t(`sym.${key}`, {}, "zh"), t(`sym.${key}`, {}, "en")].some((label) => label.toLowerCase() === lower)) || text;
+}
+
+// Moving to another date keeps what was entered for the current one (until the sheet closes),
+// so going back to it does not lose unsaved input.
+function switchDate(date) {
+  stashDraft();
+  Object.assign(sheet, { date, confirm: false, closeArmed: false, error: "", periodError: "" }, sheet.drafts[date] || draftFor(date));
+}
+
+function stashDraft() {
+  const current = {
+    flow: sheet.flow, pain: sheet.pain, symptoms: sheet.symptoms, noteId: sheet.noteId,
+    note: sheetRoot.querySelector("#sheetNote")?.value ?? sheet.note,
+    custom: sheetRoot.querySelector("#customSym")?.value ?? sheet.custom ?? "",
+  };
+  sheet.drafts = { ...(sheet.drafts || {}), [sheet.date]: current };
+}
+
+// Dates in the open day sheet whose input differs from what is saved.
+function dirtyDates() {
+  if (sheet?.type !== "day") return [];
+  stashDraft();
+  return Object.entries(sheet.drafts).filter(([date, d]) => {
+    const saved = draftFor(date);
+    const same = d.flow === saved.flow && d.pain === saved.pain && d.note.trim() === saved.note.trim() && !d.custom.trim()
+      && d.symptoms.size === saved.symptoms.size && [...d.symptoms].every((s) => saved.symptoms.has(s));
+    return !same;
+  }).map(([date]) => date);
+}
+
+// Closing a day sheet with unsaved input asks once (a toast), then lets go on the second try.
+function requestClose() {
+  if (sheet?.type === "day" && !sheet.closeArmed && dirtyDates().length) {
+    sheet.closeArmed = true;
+    showToast(t("sheet.unsavedClose"));
+    return;
+  }
+  closeSheet();
+}
+
 function draftFor(iso) {
   const note = core.notesOn(state, iso)[0];
-  return { noteId: note?.id || null, flow: note?.flow || "", pain: note?.pain ?? null, symptoms: new Set(note?.symptoms || []), note: note?.note || "" };
+  return { noteId: note?.id || null, flow: note?.flow || "", pain: note?.pain ?? null, symptoms: new Set(note?.symptoms || []), note: note?.note || "", custom: "" };
+}
+
+// Remembers what opened the sheet as a selector, not an element: saving re-renders the page,
+// so the original button is gone by the time the sheet closes.
+function describeOpener(el) {
+  if (!el || el === document.body) return null;
+  if (el.classList?.contains("nav-add")) return ".nav-add";
+  if (!el.dataset?.action) return null;
+  const attrs = ["date", "id", "value"].filter((k) => el.dataset[k]).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`).join("");
+  const scope = el.closest(".week-row, .recent-card, .months, .timeline, .facts, .cycle-card, .section-title, .notice");
+  const prefix = scope ? `.${[...scope.classList].find((c) => !["glass", "emphasis"].includes(c))} ` : "";
+  return `${prefix}[data-action="${el.dataset.action}"]${attrs}`;
 }
 
 function openDay(date) {
   const today = core.todayIso();
   const iso = date && date <= today ? date : today;
-  sheetOpener = document.activeElement;
-  sheet = { type: "day", date: iso, confirm: false, error: "", ...draftFor(iso) };
+  if (!sheet) sheetOpener = describeOpener(document.activeElement);
+  sheet = { type: "day", date: iso, confirm: false, error: "", periodError: "", ...draftFor(iso) };
   renderSheet();
   focusSheet();
 }
 
 function openPeriodEditor(id) {
   const period = id ? state.periods.find((p) => p.id === id) : null;
-  sheetOpener = document.activeElement;
+  // Opened from the day sheet: remember it (with any unsaved inputs) so closing returns there.
+  const parent = sheet?.type === "day" ? { ...sheet, note: sheetRoot.querySelector("#sheetNote")?.value ?? sheet.note } : null;
+  if (!sheet) sheetOpener = describeOpener(document.activeElement);
   sheet = {
+    parent,
     type: "period",
     id: period?.id || null,
     createdAt: period?.createdAt || "",
@@ -335,10 +419,27 @@ function openPeriodEditor(id) {
 }
 
 function closeSheet() {
+  if (sheet?.parent) {
+    sheet = { ...sheet.parent, confirm: false, error: "", periodError: "" };
+    renderSheet();
+    focusSheet();
+    return;
+  }
   sheet = null;
   renderSheet();
-  if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
+  const target = (sheetOpener && document.querySelector(sheetOpener)) || app.querySelector("h1");
+  target?.focus({ preventScroll: true });
   sheetOpener = null;
+}
+
+// A native date input under a formatted label: the picker stays native (and accessible), but the
+// text matches the app's date format instead of the browser's dd/mm/yyyy.
+function dateField(id, value, label, { disabled = false } = {}) {
+  return `<label class="field" for="${id}"><span>${label}</span>
+      <span class="date-shell${disabled ? " is-disabled" : ""}">
+        <span class="date-text" aria-hidden="true">${value ? esc(fmtLong(value)) : t("editor.pick")}</span>
+        <input type="date" id="${id}" max="${core.todayIso()}" value="${esc(value)}" ${disabled ? "disabled" : ""}>
+      </span></label>`;
 }
 
 function focusSheet() {
@@ -350,17 +451,32 @@ function renderSheet(focusSelector) {
     sheetRoot.innerHTML = "";
     sheetRoot.classList.remove("open");
     phone.classList.remove("sheet-open");
-    app.inert = false;
+    app.inert = pinLock.isLocked();
     return;
   }
   sheetRoot.classList.add("open");
   phone.classList.add("sheet-open");
   app.inert = true;
+  // Redrawing the same sheet (a chip tap, a date switch) keeps its scroll and skips the slide-in.
+  const prev = sheetRoot.querySelector(".sheet");
+  const scroll = prev && prev.dataset.type === sheet.type ? prev.scrollTop : 0;
   sheetRoot.innerHTML = `<div class="sheet-backdrop" data-action="close-sheet"></div>
-    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <section class="sheet${prev ? " no-anim" : ""}" data-type="${sheet.type}" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
       ${sheet.type === "day" ? daySheet() : periodSheet()}
     </section>`;
+  const next = sheetRoot.querySelector(".sheet");
+  next.scrollTop = scroll;
+  // Centre the selected date chip by scrolling the chip row only (scrollIntoView would also
+  // scroll the sheet back to the top).
+  const chips = next.querySelector(".date-chips");
+  const selected = chips?.querySelector("[aria-pressed='true']");
+  if (chips && selected) {
+    const a = chips.getBoundingClientRect();
+    const b = selected.getBoundingClientRect();
+    chips.scrollLeft += b.left - a.left - (a.width - b.width) / 2;
+  }
   if (focusSelector) sheetRoot.querySelector(focusSelector)?.focus({ preventScroll: true });
+  if (sheet.confirm) next.querySelector(".danger-button")?.scrollIntoView({ block: "nearest" });
 }
 
 function sheetHead(title) {
@@ -392,22 +508,26 @@ function daySheet() {
     periodHtml = `<p class="sheet-status">${t("sheet.noPeriod")}</p>
       <div class="button-row"><button class="soft-button accent" type="button" data-action="start-at">${t("sheet.startHere")}</button></div>`;
   }
+  if (sheet.periodError) periodHtml += `<p class="form-error" role="alert">${sheet.periodError}</p>`;
 
   return `${sheetHead(esc(fmtDay(d)))}
     <div class="sheet-body">
-      <div class="date-chips" role="group" aria-label="${t("sheet.title")}">
+      <div class="date-chips" role="group" aria-label="${t("sheet.dateGroup")}">
         ${recent.map((iso, i) => `<button class="chip" type="button" data-action="sheet-date" data-value="${iso}" ${pressed(iso === d)}>${esc(dateLabel(iso, i))}</button>`).join("")}
-        <label class="date-other"><span>${t("sheet.earlier")}</span><input type="date" id="sheetDate" max="${today}" value="${d}"></label>
+        <span class="chip date-shell date-chip${recent.includes(d) ? "" : " is-pressed"}">
+          <span class="date-text" aria-hidden="true">${recent.includes(d) ? t("sheet.earlier") : esc(fmtShort(d))}</span>
+          <input type="date" id="sheetDate" max="${today}" value="${d}" aria-label="${t("sheet.earlier")}">
+        </span>
       </div>
 
       <section class="sheet-section" aria-labelledby="secPeriod">
-        <h3 id="secPeriod">${t("sheet.period")}</h3>
+        <h3 id="secPeriod" tabindex="-1">${t("sheet.period")}</h3>
         ${periodHtml}
       </section>
 
       <section class="sheet-section" aria-labelledby="secFlow">
         <h3 id="secFlow">${t("sheet.flow")}</h3>
-        <div class="chips" role="group" aria-labelledby="secFlow">
+        <div class="chips flow-chips" role="group" aria-labelledby="secFlow">
           ${core.FLOWS.map((f) => `<button class="chip" type="button" data-action="set-flow" data-value="${f}" ${pressed(sheet.flow === f)}>${t(`flow.${f}`)}</button>`).join("")}
         </div>
       </section>
@@ -423,6 +543,11 @@ function daySheet() {
         <h3 id="secSym">${t("sheet.symptoms")}</h3>
         <div class="chips" role="group" aria-labelledby="secSym">
           ${core.SYMPTOMS.map((s) => `<button class="chip" type="button" data-action="toggle-sym" data-value="${s}" ${pressed(sheet.symptoms.has(s))}>${t(`sym.${s}`)}</button>`).join("")}
+          ${customSymptoms().map((s) => `<button class="chip" type="button" data-action="toggle-sym" data-value="${esc(s)}" ${pressed(sheet.symptoms.has(s))}>${esc(s)}</button>`).join("")}
+        </div>
+        <div class="add-row">
+          <input type="text" id="customSym" maxlength="24" value="${esc(sheet.custom || "")}" placeholder="${t("sheet.addPlaceholder")}" aria-label="${t("sheet.addLabel")}">
+          <button class="soft-button small" type="button" data-action="add-sym">${t("sheet.add")}</button>
         </div>
       </section>
 
@@ -448,12 +573,10 @@ function periodSheet() {
     <div class="sheet-body">
       ${problem ? `<p class="notice-text">${t(problem.code)}</p>` : ""}
       <div class="field-row">
-        <label class="field" for="editStart"><span>${t("editor.start")}</span>
-          <input type="date" id="editStart" max="${today}" value="${esc(sheet.start)}" required></label>
-        <label class="field" for="editEnd"><span>${t("editor.end")}</span>
-          <input type="date" id="editEnd" max="${today}" value="${esc(sheet.end)}" ${sheet.ongoing ? "disabled" : ""}></label>
+        ${dateField("editStart", sheet.start, t("editor.start"))}
+        ${dateField("editEnd", sheet.ongoing ? "" : sheet.end, t("editor.end"), { disabled: sheet.ongoing })}
       </div>
-      <label class="check"><input type="checkbox" id="editOngoing" ${sheet.ongoing ? "checked" : ""}><span>${t("editor.ongoing")}</span></label>
+      ${!sheet.id || isLatest ? `<label class="check"><input type="checkbox" id="editOngoing" ${sheet.ongoing ? "checked" : ""}><span>${t("editor.ongoing")}</span></label>` : ""}
       ${sheet.id && !isLatest ? `<section class="sheet-section" aria-labelledby="secCount">
           <h3 id="secCount">${t("editor.count")}</h3>
           <div class="segmented" role="group" aria-labelledby="secCount">
@@ -472,81 +595,113 @@ function periodSheet() {
 // ---------- cycles (history + insights) ----------
 
 function noteSummary(note) {
-  return [note.flow ? `${t("sheet.flow")} ${t(`flow.${note.flow}`)}` : "",
-    note.pain !== null ? `${t("sheet.pain")} ${note.pain}` : "",
+  return [note.flow ? t("summary.flow", { v: t(`flow.${note.flow}`) }) : "",
+    note.pain !== null ? t("summary.pain", { n: note.pain }) : "",
     ...note.symptoms.map((s) => (core.SYMPTOMS.includes(s) ? t(`sym.${s}`) : s)),
     note.note].filter(Boolean).join(" · ");
 }
 
-function cycleChart(cycles, pred) {
-  const shown = cycles.slice(-8);
+// Bars per cycle against the typical 21–35-day range from the brief's health rules (§7), so a
+// cycle outside it stands out (Clue's typical / atypical split). Not-counted cycles are dashed.
+const TYPICAL = [21, 35];
+
+function cycleChart(cycles) {
+  const shown = cycles.slice(-6);
   if (!shown.length) return `<p class="body-copy">${t("chart.empty")}</p>`;
   const W = 320;
-  const H = 170;
-  const top = 18;
-  const bottom = 26;
+  const H = 176;
+  const top = 20;
+  const bottom = 28;
   const yMax = Math.max(45, Math.ceil((Math.max(...shown.map((c) => c.length)) + 5) / 5) * 5);
   const y = (v) => top + (H - top - bottom) * (1 - v / yMax);
   const slot = W / shown.length;
   const barW = Math.min(26, slot * 0.56);
-  const band = pred.level !== "none" ? `<rect class="chart-band" x="0" y="${y(pred.max).toFixed(1)}" width="${W}" height="${Math.max(2, y(pred.min) - y(pred.max)).toFixed(1)}"/>` : "";
+  const band = `<rect class="chart-band" x="0" y="${y(TYPICAL[1]).toFixed(1)}" width="${W}" height="${(y(TYPICAL[0]) - y(TYPICAL[1])).toFixed(1)}"/>`;
+  const outside = (n) => n < TYPICAL[0] || n > TYPICAL[1];
   const bars = shown.map((c, i) => {
     const x = slot * i + (slot - barW) / 2;
-    const cls = c.counted ? "chart-bar" : "chart-bar excluded";
+    const cls = ["chart-bar", !c.counted && "excluded", c.counted && outside(c.length) && "atypical"].filter(Boolean).join(" ");
     return `<rect class="${cls}" x="${x.toFixed(1)}" y="${y(c.length).toFixed(1)}" width="${barW.toFixed(1)}" height="${(y(0) - y(c.length)).toFixed(1)}" rx="5"/>
-      <text class="chart-value" x="${(x + barW / 2).toFixed(1)}" y="${(y(c.length) - 5).toFixed(1)}" text-anchor="middle">${c.length}</text>
+      <text class="chart-value" x="${(x + barW / 2).toFixed(1)}" y="${(y(c.length) - 6).toFixed(1)}" text-anchor="middle">${c.length}</text>
       <text class="chart-axis" x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${esc(fmtShort(c.from.startDate))}</text>`;
   }).join("");
   const label = shown.map((c) => `${fmtShort(c.from.startDate)}: ${c.length} ${t("chart.days")}${c.counted ? "" : ` (${t("chart.notCounted")})`}`).join(", ");
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${t("chart.title")}. ${label}`)}">
+  const anyOutside = shown.some((c) => c.counted && outside(c.length));
+  const anyExcluded = shown.some((c) => !c.counted);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${t("chart.title")}. ${t("chart.typical")}. ${label}`)}">
       ${band}<line class="chart-base" x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>${bars}
     </svg>
-    ${pred.level !== "none" ? `<p class="chart-legend"><span class="swatch band"></span>${t("chart.usual", { min: pred.min, max: pred.max })}</p>` : ""}`;
+    <ul class="chart-legend">
+      <li><span class="swatch band"></span>${t("chart.typical")}</li>
+      ${anyOutside ? `<li><span class="swatch atypical"></span>${t("chart.atypical")}</li>` : ""}
+      ${anyExcluded ? `<li><span class="swatch excluded"></span>${t("chart.notCounted")}</li>` : ""}
+    </ul>`;
 }
 
+// One dot per day, scaled to fit one line (Apple Health's cycle strip).
 function dotStrip(days, bleed) {
-  const n = Math.min(days, 60);
+  const n = Math.max(1, Math.min(days, 60));
   return `<span class="dot-strip" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<i class="${i < bleed ? "on" : ""}"></i>`).join("")}</span>`;
 }
+
+// Most common symptoms over the last three cycles, for the Insights card (brief §8).
+function recentSymptoms(asc) {
+  const since = asc.length >= 3 ? asc[asc.length - 3].startDate : asc[0]?.startDate;
+  if (!since) return [];
+  const counts = new Map();
+  state.notes.filter((n) => n.date >= since).forEach((n) => n.symptoms.forEach((s) => counts.set(s, (counts.get(s) || 0) + 1)));
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+}
+
+let expandedRows = new Set();
 
 function renderCycles() {
   const today = core.todayIso();
   const cycles = core.getCycles(state);
   const stats = core.getStats(state);
-  const pred = core.predict(state);
   const flags = core.healthFlags(state, today);
   const problems = new Map(core.findProblems(state, today).map((p) => [p.id, p.code]));
   const asc = core.sortedPeriods(state);
   const byFrom = new Map(cycles.map((c) => [c.from.id, c]));
   const fmtStat = (v) => (v === null ? t("stat.none") : t("stats.days", { n: v }));
+  const symptoms = recentSymptoms(asc);
+  const symLabel = (s) => (core.SYMPTOMS.includes(s) ? t(`sym.${s}`) : s);
+  const isLatest = (p) => asc[asc.length - 1]?.id === p.id;
 
   const rows = [...asc].reverse().map((p) => {
     const idx = asc.indexOf(p);
     const next = asc[idx + 1];
     const cycle = byFrom.get(p.id);
     const len = core.periodLength(p);
+    const open = !p.endDate && isLatest(p);
     const span = next ? core.daysBetween(p.startDate, next.startDate) : Math.max(1, core.daysBetween(p.startDate, today) + 1);
-    const bleed = len ?? (!p.endDate ? Math.max(1, core.daysBetween(p.startDate, today) + 1) : 1);
+    const bleed = len ?? (open ? Math.max(1, core.daysBetween(p.startDate, today) + 1) : 0);
     const until = next ? next.startDate : core.addDays(today, 1);
-    const notes = state.notes.filter((n) => n.date >= p.startDate && n.date < until).sort((a, b) => (a.date < b.date ? 1 : -1));
+    // Logs with flow or pain first (the ones the health notes are about), then newest.
+    const notes = state.notes.filter((n) => n.date >= p.startDate && n.date < until)
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    const expanded = expandedRows.has(p.id);
+    const shownNotes = expanded ? notes : notes.slice(0, 3);
     const badges = [
       problems.has(p.id) && `<span class="badge warn">${t("list.problem")}</span>`,
       cycle && cycle.autoExcluded && `<span class="badge">${t("list.missed")}</span>`,
       cycle && !cycle.counted && !cycle.autoExcluded && `<span class="badge">${t("list.notCounted")}</span>`,
     ].filter(Boolean).join("");
+    const title = len ? t("list.range", { start: esc(fmtShort(p.startDate)), end: esc(fmtShort(p.endDate)) }) : t("list.started", { date: esc(fmtShort(p.startDate)) });
     const meta = t("list.meta", {
-      p: len ? t("list.days", { n: len }) : !p.endDate ? t("list.open") : t("stat.none"),
-      c: cycle ? t("list.days", { n: cycle.length }) : t("list.current"),
+      p: len ? t("list.days", { n: len }) : open ? t("list.open") : t("stat.none"),
+      c: cycle ? t("list.days", { n: cycle.length }) : t("list.current", { n: span }),
     });
     return `<article class="cycle-row glass">
         <button class="cycle-main" type="button" data-action="edit-period" data-id="${esc(p.id)}">
-          <span class="cycle-title"><strong>${t("list.started", { date: esc(fmtLong(p.startDate)) })}</strong>${badges}</span>
+          <span class="cycle-year">${p.startDate.slice(0, 4)}</span>
+          <span class="cycle-title"><strong>${title}</strong>${badges}</span>
           <span class="cycle-meta">${meta}</span>
           ${dotStrip(span, bleed)}
           <span class="row-chevron">${ICON_CHEVRON}</span>
         </button>
-        ${notes.length ? `<ul class="note-list">${notes.slice(0, 3).map((n) => `<li><button type="button" data-action="open-day" data-date="${n.date}"><span class="note-date">${esc(fmtShort(n.date))}</span><span>${esc(noteSummary(n))}</span></button></li>`).join("")}
-          ${notes.length > 3 ? `<li class="more">${t("list.logs", { n: notes.length })}</li>` : ""}</ul>` : ""}
+        ${notes.length ? `<ul class="note-list">${shownNotes.map((n) => `<li><button type="button" data-action="open-day" data-date="${n.date}"${n.flow === "heavy" || (n.pain ?? 0) >= 4 ? ' class="marked"' : ""}><span class="note-date">${esc(fmtShort(n.date))}</span><span>${esc(noteSummary(n))}</span></button></li>`).join("")}
+          ${notes.length > 3 ? `<li><button class="more" type="button" data-action="toggle-row" data-id="${esc(p.id)}" aria-expanded="${expanded}">${expanded ? t("list.less") : t("list.all", { n: notes.length })}</button></li>` : ""}</ul>` : ""}
       </article>`;
   }).join("");
 
@@ -557,13 +712,15 @@ function renderCycles() {
     </header>
     <section class="form-card glass chart-card" aria-labelledby="chartTitle">
       <h2 id="chartTitle">${t("chart.title")}</h2>
-      ${cycleChart(cycles, pred)}
+      ${cycleChart(cycles)}
       <dl class="mini-stats">
         <div><dt>${t("stats.shortest")}</dt><dd>${fmtStat(stats.shortest)}</dd></div>
         <div><dt>${t("stats.longest")}</dt><dd>${fmtStat(stats.longest)}</dd></div>
         <div><dt>${t("stats.average")}</dt><dd>${fmtStat(stats.average)}</dd></div>
         <div><dt>${t("stats.period")}</dt><dd>${fmtStat(stats.periodAverage)}</dd></div>
       </dl>
+      ${symptoms.length ? `<div class="sym-summary"><h3>${t("insight.symptoms")}</h3>
+        <ul class="sym-counts">${symptoms.map(([s, n]) => `<li>${esc(symLabel(s))}<span>${t("insight.times", { n })}</span></li>`).join("")}</ul></div>` : ""}
     </section>
     ${flags.length ? `<section class="form-card glass flags-card" aria-labelledby="flagsTitle">
         <h2 id="flagsTitle">${t("flags.title")}</h2>
@@ -588,7 +745,7 @@ function renderCalendar() {
   if (first && monthKey(first) < start) start = monthKey(first);
   const floor = `${Number(today.slice(0, 4)) - 2}${today.slice(4, 7)}`;
   if (start < floor) start = floor;
-  let end = core.addDays(`${monthKey(today)}-01`, 75).slice(0, 7);
+  let end = monthKey(core.addDays(today, 75));
   if (pred.level !== "none" && monthKey(pred.latest) > end) end = monthKey(pred.latest);
 
   const weekdays = t("weekdays").split(",");
@@ -599,26 +756,32 @@ function renderCalendar() {
     const offset = (firstDay.getDay() + 6) % 7;
     const count = new Date(y, m, 0).getDate();
     const cells = Array.from({ length: offset }, () => `<span class="calendar-day blank" aria-hidden="true"></span>`);
+    const infos = Array.from({ length: count }, (_, i) => core.dayInfo(state, `${ym}-${String(i + 1).padStart(2, "0")}`, today, pred));
+    const kind = (info) => (info?.period ? "period" : info?.predicted ? "predict" : "");
     for (let d = 1; d <= count; d += 1) {
       const iso = `${ym}-${String(d).padStart(2, "0")}`;
-      const info = core.dayInfo(state, iso, today, pred);
-      const cls = [info.period && "period", info.predicted && "predict", info.today && "today", info.hasNote && "has-note"].filter(Boolean).join(" ");
+      const info = infos[d - 1];
+      const col = (offset + d - 1) % 7;
+      const run = kind(info);
+      const runStart = run && (col === 0 || kind(infos[d - 2]) !== run);
+      const runEnd = run && (col === 6 || kind(infos[d]) !== run);
+      const cls = [info.period && "period", info.predicted && !info.period && "predict", runStart && "run-start", runEnd && "run-end", info.today && "today", info.hasNote && "has-note"].filter(Boolean).join(" ");
       const extra = [info.today && t("legend.today"), info.period && t("legend.period"), info.predicted && t("legend.predicted"), info.hasNote && t("legend.note")].filter(Boolean);
       cells.push(`<button class="calendar-day ${cls}" type="button" data-action="open-day" data-date="${iso}" ${info.future ? "disabled" : ""} aria-label="${esc([fmtLong(iso), ...extra].join(" · "))}">${d}</button>`);
     }
-    months.push(`<section class="month" data-month="${ym}" aria-label="${esc(fmtMonth(y, m - 1))}">
+    months.push(`<section class="month" data-month="${ym}">
         <h2>${esc(fmtMonth(y, m - 1))}</h2>
-        <div class="calendar-grid">${cells.join("")}</div>
+        <div class="calendar-grid days">${cells.join("")}</div>
       </section>`);
     ym = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
   }
 
   return `
-    <header class="page-header row">
-      <h1 tabindex="-1">${t("cal.title")}</h1>
-      <button class="soft-button small" type="button" data-action="cal-today">${t("cal.today")}</button>
-    </header>
-    <div class="calendar-sticky glass">
+    <div class="calendar-sticky">
+      <header class="page-header row">
+        <h1 tabindex="-1">${t("cal.title")}</h1>
+        <button class="soft-button small" type="button" data-action="cal-today">${t("cal.today")}</button>
+      </header>
       <ul class="legend">
         <li><i class="key period"></i>${t("legend.period")}</li>
         <li><i class="key predict"></i>${t("legend.predicted")}</li>
@@ -634,7 +797,8 @@ function scrollToMonth(ym, smooth) {
   const target = app.querySelector(`[data-month="${ym}"]`);
   if (!target) return;
   const sticky = app.querySelector(".calendar-sticky");
-  const offset = target.offsetTop - (sticky ? sticky.offsetHeight + 12 : 0);
+  const padTop = parseFloat(getComputedStyle(app).paddingTop) || 0;
+  const offset = target.offsetTop - padTop - (sticky ? sticky.offsetHeight + 8 : 0);
   app.scrollTo({ top: Math.max(0, offset), behavior: smooth && !reduceMotion.matches ? "smooth" : "auto" });
 }
 
@@ -688,6 +852,24 @@ function renderSettings() {
       ${syncButton}
     </section>
 
+    <section class="form-card glass" aria-labelledby="setShare">
+      <h2 id="setShare">${t("settings.share")}</h2>
+      <p class="body-copy">${t("settings.shareBody")}</p>
+      <div class="button-row">
+        <button class="plain-button" type="button" data-action="export-summary" ${state.periods.length ? "" : "disabled"}>${t("settings.summary")}</button>
+        <button class="plain-button" type="button" data-action="export-csv" ${state.periods.length || state.notes.length ? "" : "disabled"}>${t("settings.csv")}</button>
+      </div>
+    </section>
+
+    <section class="form-card glass" aria-labelledby="setLock">
+      <h2 id="setLock">${t("settings.lock")}</h2>
+      <p class="body-copy">${t("settings.lockBody")}</p>
+      <label class="field" for="lockPin"><span>${t(pinLock.isEnabled() ? "settings.lockCurrent" : "settings.lockPin")}</span>
+        <input type="password" id="lockPin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"></label>
+      <p class="field-error" id="lockError" role="alert"></p>
+      <button class="plain-button" type="button" data-action="${pinLock.isEnabled() ? "lock-off" : "lock-on"}">${t(pinLock.isEnabled() ? "settings.lockOff" : "settings.lockOn")}</button>
+    </section>
+
     <section class="form-card glass" aria-labelledby="setBackup">
       <h2 id="setBackup">${t("settings.backup")}</h2>
       <p class="body-copy">${t("settings.backupBody")}</p>
@@ -707,12 +889,23 @@ function setLanguage(next) {
   render();
 }
 
-function sheetResult(result, toastKey) {
+// Shows a core.js error next to the control that caused it (field = "error" or "periodError"),
+// scrolled into view, or commits the new state.
+function sheetResult(result, toastKey, field = "error") {
   if (result.error) {
-    sheet.error = t(result.error);
-    renderSheet("[role=alert]");
-    sheetRoot.querySelector("#sheetTitle")?.focus({ preventScroll: true });
+    sheet.error = "";
+    sheet.periodError = "";
+    sheet[field] = t(result.error);
+    renderSheet();
+    const alert = sheetRoot.querySelector("[role=alert]");
+    alert?.scrollIntoView({ block: "nearest" });
+    alert?.setAttribute("tabindex", "-1");
+    alert?.focus({ preventScroll: true });
     return false;
+  }
+  if (sheet) {
+    sheet.error = "";
+    sheet.periodError = "";
   }
   commit(result.state, toastKey);
   return true;
@@ -722,6 +915,12 @@ const actions = {
   "toggle-language": () => setLanguage(other()),
   "set-lang": (el) => setLanguage(el.dataset.value),
   "goto-cycles": () => setView("cycles"),
+  "goto-prep": (el, event) => {
+    event.preventDefault();
+    const card = app.querySelector("#prepKit");
+    card?.scrollIntoView({ block: "center", behavior: reduceMotion.matches ? "auto" : "smooth" });
+    card?.focus({ preventScroll: true });
+  },
   "toggle-how": () => {
     showHow = !showHow;
     const how = app.querySelector("#howText");
@@ -750,9 +949,9 @@ const actions = {
   },
 
   "open-day": (el) => openDay(el.dataset.date),
-  "close-sheet": () => closeSheet(),
+  "close-sheet": () => requestClose(),
   "sheet-date": (el) => {
-    Object.assign(sheet, { date: el.dataset.value, confirm: false, error: "" }, draftFor(el.dataset.value));
+    switchDate(el.dataset.value);
     renderSheet(`[data-action="sheet-date"][data-value="${el.dataset.value}"]`);
   },
   "set-flow": (el) => {
@@ -768,24 +967,57 @@ const actions = {
     const s = el.dataset.value;
     if (sheet.symptoms.has(s)) sheet.symptoms.delete(s);
     else sheet.symptoms.add(s);
-    renderSheet(`[data-action="toggle-sym"][data-value="${s}"]`);
+    renderSheet(`[data-action="toggle-sym"][data-value="${CSS.escape(s)}"]`);
+  },
+  "add-sym": () => {
+    const input = sheetRoot.querySelector("#customSym");
+    const value = (input?.value || "").trim().slice(0, 24);
+    if (!value) return;
+    sheet.note = sheetRoot.querySelector("#sheetNote")?.value ?? sheet.note;
+    sheet.symptoms.add(symptomKey(value));
+    sheet.custom = "";
+    sheet.confirm = false;
+    renderSheet("#customSym");
   },
   "start-at": () => {
-    if (sheetResult(core.startPeriod(state, sheet.date), "toast.started")) renderSheet("#secPeriod");
+    const latest = core.latestPeriod(state);
+    if ((latest && sheet.date < latest.startDate) || core.daysBetween(sheet.date, core.todayIso()) > 10) {
+      // A past period (before the latest one, or long ago) needs both dates: hand over to the editor.
+      const start = sheet.date;
+      openPeriodEditor(null);
+      sheet.start = start;
+      renderSheet("#editEnd");
+      return;
+    }
+    if (sheetResult(core.startPeriod(state, sheet.date), "toast.started", "periodError")) renderSheet("#secPeriod");
   },
   "end-at": () => {
-    if (sheetResult(core.endPeriod(state, sheet.date), "toast.ended")) renderSheet("#secPeriod");
+    if (sheetResult(core.endPeriod(state, sheet.date), "toast.ended", "periodError")) renderSheet("#secPeriod");
   },
   "save-day": () => {
-    const result = core.saveNote(state, {
-      id: sheet.noteId,
-      date: sheet.date,
-      flow: sheet.flow,
-      pain: sheet.pain,
-      symptoms: [...sheet.symptoms],
-      note: sheetRoot.querySelector("#sheetNote")?.value || "",
-    });
-    if (sheetResult(result, result.deleted ? "toast.deleted" : "toast.saved")) closeSheet();
+    const dates = dirtyDates();
+    if (!dates.includes(sheet.date)) dates.push(sheet.date);
+    // The date on screen last, so an error on another date can switch to it first.
+    dates.sort((a, b) => (a === sheet.date) - (b === sheet.date));
+    let next = state;
+    let deleted = false;
+    for (const date of dates) {
+      const d = sheet.drafts[date];
+      const pending = d.custom.trim().slice(0, 24);
+      const symptoms = new Set(d.symptoms);
+      if (pending) symptoms.add(symptomKey(pending));
+      const result = core.saveNote(next, { id: d.noteId, date, flow: d.flow, pain: d.pain, symptoms: [...symptoms], note: d.note });
+      if (result.error) {
+        if (date !== sheet.date) switchDate(date);
+        sheetResult(result, null);
+        return;
+      }
+      next = result.state;
+      deleted = deleted || !!result.deleted;
+    }
+    commit(next, dates.length > 1 ? null : deleted ? "toast.deleted" : "toast.saved");
+    if (dates.length > 1) showToast(t("toast.savedDays", { n: dates.length }));
+    closeSheet();
   },
   "delete-day": () => {
     if (!sheet.confirm) {
@@ -798,6 +1030,15 @@ const actions = {
   },
 
   "edit-period": (el) => openPeriodEditor(el.dataset.id),
+  "toggle-row": (el) => {
+    const id = el.dataset.id;
+    if (expandedRows.has(id)) expandedRows.delete(id);
+    else expandedRows.add(id);
+    const top = app.scrollTop;
+    render();
+    app.scrollTop = top;
+    app.querySelector(`[data-action="toggle-row"][data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+  },
   "add-period": () => openPeriodEditor(null),
   "set-mode": (el) => {
     sheet.mode = el.dataset.value;
@@ -833,6 +1074,27 @@ const actions = {
     const reminderTime = app.querySelector("#reminderTime")?.value || "09:00";
     commit({ ...state, settings: { prepDays, reminderTime, updatedAt: new Date().toISOString() } }, "toast.settings");
   },
+  "export-summary": () => {
+    download(`cycle-summary-${core.todayIso()}.html`, report.buildSummaryHtml(state, { t, fmtLong, fmtShort, lang: state.language }), "text/html;charset=utf-8");
+  },
+  "export-csv": () => {
+    download(`cycle-garden-${core.todayIso()}.csv`, report.buildCsv(state, t), "text/csv;charset=utf-8");
+  },
+  "lock-on": async () => {
+    const input = document.querySelector("#lockPin");
+    const pin = input?.value || "";
+    if (!pinLock.isValidPin(pin)) { document.querySelector("#lockError").textContent = t("err.pinFormat"); input?.focus(); return; }
+    await pinLock.setPin(pin);
+    render();
+    showToast(t("toast.lockOn"));
+  },
+  "lock-off": async () => {
+    const input = document.querySelector("#lockPin");
+    if (!(await pinLock.verify(input?.value || ""))) { document.querySelector("#lockError").textContent = t("err.pinWrong"); input?.focus(); return; }
+    pinLock.clearPin();
+    render();
+    showToast(t("toast.lockOff"));
+  },
   "export-data": () => {
     const stamp = core.todayIso().replace(/-/g, "");
     download(`cycle-garden-backup-${stamp}.json`, JSON.stringify(state, null, 2), "application/json");
@@ -851,40 +1113,76 @@ document.addEventListener("click", (event) => {
   }
   const el = event.target.closest("[data-action]");
   if (!el || el.disabled) return;
+  // Any action other than the delete button itself disarms "tap again to delete".
+  if (sheet?.confirm && !["delete-day", "delete-period"].includes(el.dataset.action)) sheet.confirm = false;
   actions[el.dataset.action]?.(el, event);
 });
 
 sheetRoot.addEventListener("change", (event) => {
   if (!sheet) return;
   const { id } = event.target;
+  const today = core.todayIso();
   if (id === "sheetDate" && core.isIso(event.target.value)) {
-    Object.assign(sheet, { date: event.target.value, confirm: false, error: "" }, draftFor(event.target.value));
+    const future = event.target.value > today;
+    switchDate(future ? today : event.target.value);
     renderSheet("#sheetDate");
+    if (future) showToast(t("err.dateFuture"));
+  } else if (id === "editStart" || id === "editEnd") {
+    sheet.start = sheetRoot.querySelector("#editStart")?.value || "";
+    sheet.end = sheetRoot.querySelector("#editEnd")?.value || "";
+    sheet.confirm = false;
+    renderSheet(`#${id}`);
   } else if (id === "editOngoing") {
     sheet.ongoing = event.target.checked;
     sheet.start = sheetRoot.querySelector("#editStart")?.value || sheet.start;
     sheet.end = sheetRoot.querySelector("#editEnd")?.value || sheet.end;
+    sheet.confirm = false;
     renderSheet("#editOngoing");
+  }
+});
+
+// Open the native picker on click (desktop browsers otherwise only focus the hidden segments).
+sheetRoot.addEventListener("click", (event) => {
+  const input = event.target.closest(".date-shell input[type=date]");
+  if (input && !input.disabled) {
+    try { input.showPicker?.(); } catch { /* not allowed here: the input still works by keyboard */ }
   }
 });
 
 sheetRoot.addEventListener("input", (event) => {
   if (sheet?.type === "day" && event.target.id === "sheetNote") sheet.note = event.target.value;
+  if (sheet?.type === "day" && event.target.id === "customSym") sheet.custom = event.target.value;
+  if (sheet) sheet.closeArmed = false;
+  if (sheet?.confirm) {
+    sheet.confirm = false;
+    const del = sheetRoot.querySelector("[data-action='delete-day'], [data-action='delete-period']");
+    if (del) del.textContent = t(sheet.type === "day" ? "sheet.deleteLog" : "editor.delete");
+  }
+});
+
+sheetRoot.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target.id === "customSym") {
+    event.preventDefault();
+    actions["add-sym"]();
+  }
 });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && sheet) {
     event.preventDefault();
-    closeSheet();
+    requestClose();
   }
-  // Keep Tab inside an open sheet.
+  // Keep Tab inside an open sheet. Only the two ends and focus that has left the sheet need help;
+  // anywhere else (including a heading or alert with tabindex=-1) the browser's order is right.
   if (event.key === "Tab" && sheet) {
-    const focusable = [...sheetRoot.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea, [tabindex='-1']")];
+    const focusable = [...sheetRoot.querySelectorAll(".sheet button:not([disabled]), .sheet input:not([disabled]), .sheet textarea")];
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    const active = document.activeElement;
+    const outside = !sheetRoot.contains(active);
+    if (event.shiftKey && (active === first || outside || active?.id === "sheetTitle")) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (active === last || outside)) { event.preventDefault(); first.focus(); }
   }
 });
 
@@ -920,8 +1218,9 @@ function adoptMerged(merged) {
   if (core.sameData(merged, state)) return;
   state = core.normalize({ ...merged, language: state.language });
   persist();
-  if (sheet) renderSheet();
-  else render();
+  const top = app.scrollTop;
+  render();
+  app.scrollTop = top;
 }
 
 let pushTimer = null;
@@ -943,7 +1242,9 @@ async function pushCloud() {
       }
       return next;
     });
-    adoptMerged(merged);
+    // Merge into the state as it is now: anything committed while the transaction ran stays,
+    // and that commit has already queued its own push.
+    adoptMerged(core.mergeStates(state, merged).state);
   } catch (error) {
     console.warn("Cloud sync failed; will retry on the next change or when back online.", error);
   }
@@ -983,6 +1284,15 @@ async function initCloud() {
     cloud.unsubscribe?.();
     cloud.unsubscribe = null;
     if (user) {
+      let owner = null;
+      try { owner = localStorage.getItem(OWNER_KEY); } catch { /* storage blocked: treat as first sign-in */ }
+      if (owner && owner !== user.uid && (state.periods.length || state.notes.length)) {
+        cloud.user = null;
+        authMod.signOut(cloud.auth);
+        showToast(t("toast.otherAccount"));
+        return;
+      }
+      try { localStorage.setItem(OWNER_KEY, user.uid); } catch { /* sync still works this session */ }
       cloud.docRef = fsMod.doc(cloud.db, "users", user.uid);
       pushCloud();
       cloud.unsubscribe = fsMod.onSnapshot(cloud.docRef, (snap) => {
@@ -1037,7 +1347,16 @@ window.addEventListener("online", queuePush);
 
 // Re-render when the app comes back to the foreground on a new day, so "today" is never stale.
 let renderedDay = core.todayIso();
+const lockRoot = document.querySelector("#lockRoot");
+const lockOptions = () => ({
+  t,
+  cover: [app, document.querySelector(".bottom-nav"), sheetRoot],
+  onUnlock: () => document.querySelector("#app h1")?.focus({ preventScroll: true }),
+});
+pinLock.lock(lockRoot, lockOptions());
+
 document.addEventListener("visibilitychange", () => {
+  pinLock.onVisibility(lockRoot, lockOptions());
   if (document.visibilityState === "visible" && core.todayIso() !== renderedDay) {
     renderedDay = core.todayIso();
     render();

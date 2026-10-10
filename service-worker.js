@@ -1,15 +1,21 @@
-const CACHE_NAME = "cycle-garden-v8";
+const CACHE_NAME = "cycle-garden-v10";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./core.js",
+  "./report.js",
+  "./lock.js",
   "./i18n.js",
   "./firebase-config.js",
   "./manifest.json",
   "./favicon.svg",
-  "./icons/icon.svg"
+  "./icons/icon.svg",
+  "./icons/apple-touch-icon.png",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./icons/icon-maskable-512.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -28,11 +34,14 @@ self.addEventListener("activate", (event) => {
 // when online, and fall back to the cached copy when offline.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
         return response;
       })
       .catch(() => caches.match(event.request))

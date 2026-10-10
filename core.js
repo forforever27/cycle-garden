@@ -342,7 +342,7 @@ export function validatePeriod(periods, candidate, today = todayIso()) {
     // candidate that starts before an existing period would be stale the moment it is saved.
     const latestOther = sortedPeriods({ periods: others }).at(-1);
     if (latestOther && !latestOther.endDate) return "err.openExists";
-    if (latestOther && latestOther.startDate >= candidate.startDate) return "err.staleOpen";
+    if (latestOther && latestOther.startDate >= candidate.startDate) return "err.pastNeedsEnd";
   }
   const all = [...others, { ...candidate, id: candidate.id || "__candidate" }];
   const ranges = effectiveRanges(all, today);
@@ -437,6 +437,7 @@ export function saveNote(state, note, now = stamp()) {
     updatedAt: now,
   };
   if (!isIso(record.date)) return { state, error: "err.dateInvalid" };
+  if (record.date > todayIso()) return { state, error: "err.dateFuture" };
   const empty = !record.note && !record.symptoms.length && !record.flow && record.pain === null;
   if (empty) {
     // Clearing every field of an existing note is a delete.

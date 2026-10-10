@@ -58,7 +58,7 @@ const STRINGS = {
     "flag.spotting": "两次经期之间记录到了几次出血。",
     "flags.footer": "这不是诊断。如果一直这样，可以找医生聊聊。",
     "list.title": "每一次", "list.started": "{date} 开始", "list.meta": "经期 {p} · 周期 {c}", "list.days": "{n} 天", "list.open": "进行中", "list.current": "已到第 {n} 天", "list.range": "{start} – {end}", "list.all": "显示全部 {n} 条", "list.less": "收起", "insight.symptoms": "最近三个周期常见的状况", "insight.times": "{n} 次",
-    "list.notCounted": "未计入预测", "list.missed": "可能漏记", "list.problem": "需要修正", "list.logs": "{n} 条记录", "list.empty": "还没有任何记录。按「月经来了」开始。",
+    "list.notCounted": "未计入预测", "list.missed": "可能漏记", "list.tooClose": "两次开始太近", "err.tooClose": "下一次开始只隔了不到 10 天，可能记重了。如果两次都没错，在下面选择这个周期是否计入。", "list.problem": "需要修正", "list.logs": "{n} 条记录", "list.empty": "还没有任何记录。按「月经来了」开始。",
     "list.add": "补记一次经期",
 
     "cal.title": "日历", "cal.today": "回到本月",
@@ -131,7 +131,7 @@ const STRINGS = {
     "how.text": "Your shortest ({min} days) and longest ({max} days) of the last {n} cycles, counted from your last start on {date}. The less regular your cycles, the wider the window.",
     "how.rough": "With only {n} cycle(s), 3 extra days are added on each side.",
     "how.excluded": "{n} cycle(s) left out because a period was probably not logged. You can change this in Cycles.",
-    "problems.banner": "{n} record(s) have dates that need fixing", "problems.open": "Fix",
+    "problems.banner": "Dates to fix: {n}", "problems.open": "Fix",
 
     "week.label": "This week", "recent.title": "Recent logs", "summary.flow": "Flow: {v}", "summary.pain": "Pain: {n}/5",
     "prep.title": "Prep kit", "prep.pads": "Pads", "prep.liners": "Liners", "prep.relief": "Pain relief", "prep.done": "All packed",
@@ -164,7 +164,7 @@ const STRINGS = {
     "flag.spotting": "Some bleeding was logged between periods.",
     "flags.footer": "This isn't a diagnosis. If it keeps happening, it may be worth checking with a doctor.",
     "list.title": "Each cycle", "list.started": "Started {date}", "list.meta": "Period {p} · cycle {c}", "list.days": "{n} days", "list.open": "ongoing", "list.current": "day {n} so far", "list.range": "{start} – {end}", "list.all": "Show all {n}", "list.less": "Show fewer", "insight.symptoms": "Most logged in the last 3 cycles", "insight.times": "{n}×",
-    "list.notCounted": "Not counted", "list.missed": "Possibly missed a log", "list.problem": "Needs fixing", "list.logs": "{n} log(s)", "list.empty": "Nothing logged yet. Tap Period started to begin.",
+    "list.notCounted": "Not counted", "list.missed": "Possibly missed a log", "list.tooClose": "Starts too close", "err.tooClose": "The next period starts less than 10 days after this one, so one may be logged twice. If both are right, choose below whether this cycle counts.", "list.problem": "Needs fixing", "list.logs": "{n} log(s)", "list.empty": "Nothing logged yet. Tap Period started to begin.",
     "list.add": "Add a past period",
 
     "cal.title": "Calendar", "cal.today": "This month",

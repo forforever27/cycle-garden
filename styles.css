@@ -64,7 +64,7 @@ h1:focus { outline: none; }
 }
 
 .ambient { position: absolute; border-radius: 999px; filter: blur(18px); pointer-events: none; }
-.ambient-a { top: 86px; right: 24px; width: 94px; height: 94px; background: rgba(255, 155, 184, 0.3); }
+.ambient-a { top: 86px; right: 24px; width: 94px; height: 94px; background: rgba(255, 155, 184, 0.16); }
 .ambient-b { left: -40px; bottom: 250px; width: 150px; height: 150px; background: rgba(141, 184, 255, 0.22); }
 
 /* The page-level moon used to sit on top of headings; it now lives inside the Home top bar. */
@@ -295,7 +295,7 @@ h1:focus { outline: none; }
   background: rgba(255, 255, 255, 0.055);
   color: var(--soft);
 }
-.date-pill small { font-size: 11px; }
+.date-pill small { font-size: 11px; white-space: nowrap; }
 .date-pill strong { color: var(--ink); font-size: 15px; }
 .date-pill.period { border-color: transparent; background: linear-gradient(160deg, rgba(255, 155, 184, 0.55), rgba(184, 133, 255, 0.4)); color: #fff; }
 .date-pill.predicted { background: rgba(184, 133, 255, 0.16); }
@@ -444,8 +444,8 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 .chart-bar { fill: var(--violet); }
 .chart-bar.atypical { fill: var(--peach); }
 .chart-bar.excluded { fill: rgba(255, 255, 255, 0.14); stroke: rgba(255, 255, 255, 0.4); stroke-dasharray: 3 3; }
-.chart-value { fill: var(--ink); font-size: 14px; font-weight: 600; }
-.chart-axis { fill: var(--soft); font-size: 14px; }
+.chart-value { fill: var(--ink); font-size: 14.5px; font-weight: 600; }
+.chart-axis { fill: var(--soft); font-size: 14.5px; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; color: var(--soft); font-size: 12px; }
 .chart-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .swatch { display: inline-block; width: 14px; height: 10px; border-radius: 3px; }
@@ -652,6 +652,7 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 }
 
 @media (max-width: 360px) {
+  .date-pill { padding-inline: 0; }
   .calendar-sticky { margin: 0 -14px 14px; padding: 10px 14px; }
   .calendar-grid.days .calendar-day { margin: 0 2px; }
   .field-row { grid-template-columns: 1fr; }

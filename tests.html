@@ -312,8 +312,11 @@ test("two devices each start a period before syncing: the newer one can be ended
   const after = ended.state;
   const fixed = core.savePeriod(after, { ...after.periods.find((p) => p.id === "p0"), endDate: "2026-10-01" }).state;
   expect([ended.error, core.findProblems(s, "2026-10-08").map((p) => p.code), core.findProblems(after, "2026-10-11").map((p) => [p.id, p.code]),
-          core.openPeriod(after), core.getStatus(after, "2026-10-11").kind === "period", core.startPeriod(after, "2026-10-10").error, core.findProblems(fixed, "2026-10-11")],
-         [null, ["err.staleOpen"], [["p0", "err.staleOpen"]], null, false, null, []]);
+          core.openPeriod(after), core.getStatus(after, "2026-10-11").kind === "period", core.startPeriod(after, "2026-10-10").error, core.findProblems(fixed, "2026-10-11").map((p) => [p.id, p.code])],
+         [null, ["err.staleOpen"], [["p0", "err.staleOpen"]], null, false, null, [["p0", "err.tooClose"]]]);
+  // choosing whether that 4-day cycle counts means both are real: the report ends
+  const kept = core.savePeriod(fixed, { ...fixed.periods.find((p) => p.id === "p0"), cycleMode: "exclude" }).state;
+  expect(core.findProblems(kept, "2026-10-11"), []);
 });
 test("a closed period added inside an open one is allowed, and the open one is then reported", () => {
   const s = core.normalize(history([["2026-10-01", ""]]));
@@ -419,9 +422,15 @@ test("summary escapes user text and has no script", () => {
   expect([html.includes("<b>x</b>"), html.includes("&lt;b&gt;x&lt;/b&gt;"), /<script/i.test(html)], [false, true, false]);
 });
 test("PIN must be 4-6 digits", () => { expect(["123", "1234", "123456", "1234567", "12a4", ""].map(isValidPin), [false, true, true, false, false, false]); });
-test("two starts on the same day are one period, not a 0-day cycle", () => {
-  const st = core.normalize({ periods: [["2026-01-01","2026-01-05"],["2026-01-29","2026-02-02"],["2026-01-29","2026-02-02"],["2026-02-26","2026-03-02"]].map((x, i) => ({ id: "p" + i, startDate: x[0], endDate: x[1] })) });
-  expect(core.getCycles(st).map((c) => c.length), [28, 28]);
+test("starts under 10 days apart: every period kept, the short cycle not counted, the pair flagged", () => {
+  const mk = (rows) => core.normalize({ periods: rows.map((x, i) => ({ id: "p" + i, startDate: x[0], endDate: x[1] })) });
+  const same = mk([["2026-01-01","2026-01-05"],["2026-01-29","2026-02-02"],["2026-01-29","2026-02-02"],["2026-02-26","2026-03-02"]]);
+  expect(core.getCycles(same).map((c) => [c.length, c.counted]), [[28, true], [0, false], [28, true]]);
+  expect(core.predict(same).count, 2);
+  const close = mk([["2026-04-01","2026-04-05"],["2026-04-29","2026-05-01"],["2026-05-06","2026-05-08"],["2026-05-27","2026-05-31"]]);
+  expect(core.sortedPeriods(close).length, 4);
+  expect(core.findProblems(close, "2026-06-10").map((p) => p.code), ["err.tooClose"]);
+  expect(core.getCycles(close).map((c) => c.counted), [true, false, true]);
 });
 test("a recent window is at least 5 days wide", () => {
   const st = core.normalize({ periods: ["2026-01-01","2026-01-29","2026-02-26","2026-03-26"].map((d, i) => ({ id: "p" + i, startDate: d, endDate: core.addDays(d, 4) })) });

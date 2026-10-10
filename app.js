@@ -607,8 +607,8 @@ const TYPICAL = [21, 35];
 
 function cycleChart(cycles) {
   const counted = cycles.filter((c) => c.counted);
-  const from = counted.length > 6 ? cycles.indexOf(counted[counted.length - 6]) : Math.max(0, cycles.length - 6);
-  const shown = cycles.slice(from);
+  const from = counted.length ? cycles.indexOf(counted[Math.max(0, counted.length - 6)]) : Math.max(0, cycles.length - 6);
+  const shown = cycles.slice(from).slice(-8);
   const axis = (iso) => (getLang() === "zh" ? `${Number(iso.slice(5, 7))}/${Number(iso.slice(8))}` : fmtShort(iso));
   if (!shown.length) return `<p class="body-copy">${t("chart.empty")}</p>`;
   const W = 320;
@@ -627,7 +627,7 @@ function cycleChart(cycles) {
     const cls = ["chart-bar", !c.counted && "excluded", c.counted && outside(c.length) && "atypical"].filter(Boolean).join(" ");
     return `<rect class="${cls}" x="${x.toFixed(1)}" y="${y(c.length).toFixed(1)}" width="${barW.toFixed(1)}" height="${(y(0) - y(c.length)).toFixed(1)}" rx="5"/>
       <text class="chart-value" x="${(x + barW / 2).toFixed(1)}" y="${(y(c.length) - 6).toFixed(1)}" text-anchor="middle">${c.length}</text>
-      <text class="chart-axis" x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${i % step === 0 ? esc(axis(c.from.startDate)) : ""}</text>`;
+      <text class="chart-axis" x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${(shown.length - 1 - i) % step === 0 ? esc(axis(c.from.startDate)) : ""}</text>`;
   }).join("");
   const label = shown.map((c) => `${fmtShort(c.from.startDate)}: ${c.length} ${t("chart.days")}${c.counted ? "" : ` (${t("chart.notCounted")})`}`).join(", ");
   const anyOutside = shown.some((c) => c.counted && outside(c.length));
@@ -688,7 +688,7 @@ function renderCycles() {
     const shownNotes = expanded ? notes : notes.slice(0, 3);
     const badges = [
       problems.has(p.id) && `<span class="badge warn">${t("list.problem")}</span>`,
-      cycle && cycle.autoExcluded && `<span class="badge">${t("list.missed")}</span>`,
+      cycle && cycle.autoExcluded && `<span class="badge">${t(cycle.tooShort ? "list.tooClose" : "list.missed")}</span>`,
       cycle && !cycle.counted && !cycle.autoExcluded && `<span class="badge">${t("list.notCounted")}</span>`,
     ].filter(Boolean).join("");
     const title = len ? t("list.range", { start: esc(fmtShort(p.startDate)), end: esc(fmtShort(p.endDate)) }) : t("list.started", { date: esc(fmtShort(p.startDate)) });

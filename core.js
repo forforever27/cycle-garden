@@ -415,6 +415,12 @@ export function findProblems(state, today = todayIso()) {
       if (overlaps(ranges.get(sorted[i].id), ranges.get(sorted[j].id))) flag(sorted[j].id, "err.overlap");
     }
   }
+  for (let i = 1; i < sorted.length; i += 1) {
+    // Reported on the earlier period, whose editor has the "count this cycle" switch; choosing
+    // include/exclude there means "both are real" and ends the report. One report per pair.
+    const [a, b] = [sorted[i - 1], sorted[i]];
+    if (daysBetween(a.startDate, b.startDate) < MIN_GAP && a.cycleMode === "auto" && !found.has(a.id) && !found.has(b.id)) flag(a.id, "err.tooClose");
+  }
   return [...found.values()];
 }
 
@@ -465,26 +471,24 @@ export function deleteNote(state, id) {
 // counted=false when the user excluded it, or (auto) when it looks like a period was never
 // logged: at least twice the median of the other cycles AND a one-off. A long cycle that
 // repeats (another cycle within 25% of it) is a real pattern and always counts.
-// Two starts less than MIN_GAP days apart are one period logged twice (two devices before a
-// sync), never a real cycle: only the first one starts a cycle. findProblems still flags them.
-const MIN_GAP = 10;
+// A cycle shorter than MIN_GAP days is almost always one period logged twice (two devices
+// before a sync) or a mistyped date: it is not counted, and findProblems reports the pair.
+// Every period is kept, so nothing disappears from the history.
+export const MIN_GAP = 10;
 export function getCycles(state) {
-  const ps = [];
-  for (const p of sortedPeriods(state)) {
-    const prev = ps[ps.length - 1];
-    if (!prev || daysBetween(prev.startDate, p.startDate) >= MIN_GAP) ps.push(p);
-  }
+  const ps = sortedPeriods(state);
   const cycles = [];
   for (let i = 1; i < ps.length; i += 1) {
     cycles.push({ from: ps[i - 1], to: ps[i], length: daysBetween(ps[i - 1].startDate, ps[i].startDate) });
   }
   return cycles.map((cycle, index) => {
-    const others = cycles.filter((_, j) => j !== index).map((c) => c.length);
+    const tooShort = cycle.length < MIN_GAP;
+    const others = cycles.filter((c, j) => j !== index && c.length >= MIN_GAP).map((c) => c.length);
     const repeats = others.some((length) => Math.abs(length - cycle.length) <= Math.max(length, cycle.length) * 0.25);
     const likelyMissed = others.length >= 3 && cycle.length >= 2 * median(others) && !repeats;
     const mode = cycle.from.cycleMode;
-    const counted = mode === "include" ? true : mode === "exclude" ? false : !likelyMissed;
-    return { ...cycle, counted, autoExcluded: mode === "auto" && likelyMissed };
+    const counted = mode === "include" ? true : mode === "exclude" ? false : !likelyMissed && !tooShort;
+    return { ...cycle, counted, tooShort, autoExcluded: mode === "auto" && (likelyMissed || tooShort) };
   });
 }
 

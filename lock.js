@@ -29,7 +29,7 @@ async function derive(pin, salt) {
 
 export const isValidPin = (pin) => /^\d{4,6}$/.test(pin);
 export const isEnabled = () => !!read()?.hash;
-export const pinLength = () => read()?.length || 4;
+export const pinLength = () => { const n = read()?.length; return n >= 4 && n <= 6 ? n : 4; };
 
 export async function setPin(pin) {
   if (!isValidPin(pin)) return false;
@@ -133,7 +133,7 @@ export function lock(root, { t, onUnlock, cover = [] }) {
   // Keys are captured so nothing reaches the app underneath while it is locked.
   function onKey(event) {
     if (!locked) return;
-    if (event.key !== "Tab") event.stopImmediatePropagation();
+    event.stopImmediatePropagation();
     if (event.key === "Escape") event.preventDefault();
     if (/^\d$/.test(event.key)) { event.preventDefault(); press(event.key); }
     else if (event.key === "Backspace") { event.preventDefault(); press("back"); }

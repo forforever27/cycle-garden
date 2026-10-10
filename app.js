@@ -268,7 +268,7 @@ function renderHome() {
         ${ringSvg(st, pred, today)}
         <div class="ring-center">
           ${copy.label ? `<span class="ring-label">${copy.label}</span>` : ""}
-          <h2 class="ring-head" id="statusHead">${copy.head}</h2>
+          <h2 class="ring-head" id="statusHead">${copy.head.replace(/(\d+) /g, "$1\u00a0")}</h2>
         </div>
       </div>
       <p class="status-sub">${copy.sub}</p>

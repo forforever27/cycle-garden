@@ -135,7 +135,7 @@ h1:focus { outline: none; }
 /* dark ink on the gradient: white on it was 2.1-2.8:1 */
 .primary-action { color: #1a1430; }
 .primary-action strong { font-size: 17px; }
-.primary-action span { color: rgba(26, 20, 48, 0.8); font-size: 12px; }
+.primary-action span { color: #1a1430; font-size: 12px; font-weight: 500; }
 .primary-action.compact { min-height: 52px; }
 
 .soft-button, .plain-button, .danger-button {
@@ -252,7 +252,7 @@ h1:focus { outline: none; }
   text-align: center;
 }
 .ring-label { color: var(--soft); font-size: 12px; }
-.ring-head { font-size: 19px; line-height: 1.22; text-wrap: balance; word-break: keep-all; }
+.ring-head { font-size: 19px; line-height: 1.22; text-wrap: balance; word-break: keep-all; overflow-wrap: anywhere; }
 
 .facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
 .fact {
@@ -297,7 +297,7 @@ h1:focus { outline: none; }
 }
 .date-pill small { font-size: 11px; white-space: nowrap; }
 .date-pill strong { color: var(--ink); font-size: 15px; }
-.date-pill.period { border-color: transparent; background: linear-gradient(160deg, rgba(255, 155, 184, 0.55), rgba(184, 133, 255, 0.4)); color: #fff; }
+.date-pill.period { border-color: transparent; background: linear-gradient(160deg, rgb(160, 59, 109), rgb(104, 70, 173)); color: #fff; }
 .date-pill.predicted { background: rgba(184, 133, 255, 0.16); }
 .date-pill.predicted::before {
   position: absolute; top: 5px; left: 50%; width: 6px; height: 6px; content: ""; transform: translateX(-50%);
@@ -409,7 +409,7 @@ input, textarea {
 }
 input:disabled { opacity: 0.45; }
 textarea { resize: vertical; }
-textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
+textarea::placeholder, input::placeholder { color: rgba(255, 248, 255, 0.62); }
 .check { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--muted); font-size: 14px; }
 .check input {
   appearance: none; flex-shrink: 0; width: 24px; height: 24px; min-height: 0; padding: 0; margin: 0;
@@ -528,7 +528,7 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
 .legend li { display: inline-flex; align-items: center; gap: 6px; }
 .key { display: inline-block; width: 14px; height: 14px; border-radius: 5px; }
-.key.period { background: linear-gradient(135deg, var(--rose), var(--violet)); }
+.key.period { background: linear-gradient(180deg, rgb(160, 59, 109), rgb(104, 70, 173)); }
 .key.predict { position: relative; background: rgba(184, 133, 255, 0.16); }
 .key.predict::after {
   position: absolute; top: 4px; left: 4px; width: 6px; height: 6px; content: "";
@@ -553,7 +553,7 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
   font-size: 14px;
 }
 .calendar-day.blank { min-height: 0; }
-.calendar-day.period { background: linear-gradient(180deg, rgba(255, 155, 184, 0.58), rgba(184, 133, 255, 0.42)); color: #fff; font-weight: 600; }
+.calendar-day.period { background: linear-gradient(180deg, rgb(160, 59, 109), rgb(104, 70, 173)); color: #fff; font-weight: 600; }
 .calendar-day.predict { background: rgba(184, 133, 255, 0.14); }
 .calendar-day.predict::before {
   position: absolute; top: 5px; width: 6px; height: 6px; content: "";
@@ -561,7 +561,7 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 }
 /* a run of period (or likely) days reads as one band across the week row */
 .calendar-grid.days .calendar-day.period:not(.run-start),
-.calendar-grid.days .calendar-day.predict:not(.run-start) { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.calendar-grid.days .calendar-day.predict:not(.run-start) { margin-left: -1px; /* overlap 1px: no seam inside a band */ border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .calendar-grid.days .calendar-day.period:not(.run-end),
 .calendar-grid.days .calendar-day.predict:not(.run-end) { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .calendar-day.today { border: 2px solid #fff; font-weight: 700; }
@@ -571,7 +571,7 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 }
 /* today keeps a whole rounded ring even in the middle of a band */
 .calendar-grid.days .calendar-day.today { border-radius: 13px; }
-.calendar-day:disabled { color: rgba(255, 248, 255, 0.55); }
+.calendar-day:disabled { color: rgba(255, 248, 255, 0.66); }
 
 /* ---------- nav ---------- */
 

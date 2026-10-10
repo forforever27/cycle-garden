@@ -5,8 +5,8 @@
   --bg: #090912;
   --surface: #17152a;
   --ink: #fff8ff;
-  --muted: rgba(255, 248, 255, 0.92);
-  --soft: rgba(255, 248, 255, 0.88);
+  --muted: rgba(255, 248, 255, 0.86);
+  --soft: rgba(255, 248, 255, 0.76);
   --faint: rgba(255, 248, 255, 0.16);
   --line: rgba(255, 255, 255, 0.14);
   --glass: rgba(255, 255, 255, 0.075);
@@ -14,7 +14,7 @@
   --rose: #ff9bb8;
   --blue: #8db8ff;
   --peach: #ffc5a8;
-  --lilac: #ebe0ff;
+  --lilac: #e2d4ff;
   --grad: linear-gradient(135deg, rgba(255, 155, 184, 0.92), rgba(184, 133, 255, 0.92) 58%, rgba(141, 184, 255, 0.85));
   --shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
   --soft-shadow: 0 18px 42px rgba(40, 20, 72, 0.32);
@@ -58,7 +58,7 @@ h1:focus { outline: none; }
   border-radius: 38px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
-    radial-gradient(circle at 50% 0%, rgba(184, 133, 255, 0.26), transparent 42%),
+    radial-gradient(circle at 50% 0%, rgba(184, 133, 255, 0.16), transparent 42%),
     #10101d;
   box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
@@ -113,7 +113,7 @@ h1:focus { outline: none; }
 
 .glass {
   border: 1px solid var(--line);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.055)), var(--glass);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)), rgba(16, 14, 30, 0.5);
   box-shadow: var(--soft-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(26px) saturate(1.35);
 }
@@ -488,7 +488,7 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
   padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px;
   color: var(--soft); font-size: 11px;
 }
-.badge.warn { border-color: rgba(255, 197, 168, 0.5); color: var(--peach); }
+.badge.warn { border-color: rgba(255, 197, 168, 0.5); color: #ffe2d4; }
 .dot-strip { display: flex; gap: 2px; margin-top: 4px; overflow: hidden; }
 .dot-strip i { flex: 0 1 6px; min-width: 2px; height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
 .dot-strip i.on { background: var(--rose); }
@@ -501,7 +501,7 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 }
 .note-list .note-date { flex-shrink: 0; color: var(--soft); }
 .note-list button.more { color: var(--lilac); font-weight: 600; }
-.note-list button.marked .note-date { color: var(--rose); }
+.note-list button.marked .note-date { color: #ffbdd0; }
 
 /* calendar */
 /* Full-bleed app bar: it sticks below the page's top padding, and its ::before covers that

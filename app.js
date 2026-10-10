@@ -606,7 +606,10 @@ function noteSummary(note) {
 const TYPICAL = [21, 35];
 
 function cycleChart(cycles) {
-  const shown = cycles.slice(-6);
+  const counted = cycles.filter((c) => c.counted);
+  const from = counted.length > 6 ? cycles.indexOf(counted[counted.length - 6]) : Math.max(0, cycles.length - 6);
+  const shown = cycles.slice(from);
+  const axis = (iso) => (getLang() === "zh" ? `${Number(iso.slice(5, 7))}/${Number(iso.slice(8))}` : fmtShort(iso));
   if (!shown.length) return `<p class="body-copy">${t("chart.empty")}</p>`;
   const W = 320;
   const H = 176;
@@ -618,12 +621,13 @@ function cycleChart(cycles) {
   const barW = Math.min(26, slot * 0.56);
   const band = `<rect class="chart-band" x="0" y="${y(TYPICAL[1]).toFixed(1)}" width="${W}" height="${(y(TYPICAL[0]) - y(TYPICAL[1])).toFixed(1)}"/>`;
   const outside = (n) => n < TYPICAL[0] || n > TYPICAL[1];
+  const step = shown.length > 6 ? 2 : 1; // every other date label when there are more than 6 bars
   const bars = shown.map((c, i) => {
     const x = slot * i + (slot - barW) / 2;
     const cls = ["chart-bar", !c.counted && "excluded", c.counted && outside(c.length) && "atypical"].filter(Boolean).join(" ");
     return `<rect class="${cls}" x="${x.toFixed(1)}" y="${y(c.length).toFixed(1)}" width="${barW.toFixed(1)}" height="${(y(0) - y(c.length)).toFixed(1)}" rx="5"/>
       <text class="chart-value" x="${(x + barW / 2).toFixed(1)}" y="${(y(c.length) - 6).toFixed(1)}" text-anchor="middle">${c.length}</text>
-      <text class="chart-axis" x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${esc(fmtShort(c.from.startDate))}</text>`;
+      <text class="chart-axis" x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${i % step === 0 ? esc(axis(c.from.startDate)) : ""}</text>`;
   }).join("");
   const label = shown.map((c) => `${fmtShort(c.from.startDate)}: ${c.length} ${t("chart.days")}${c.counted ? "" : ` (${t("chart.notCounted")})`}`).join(", ");
   const anyOutside = shown.some((c) => c.counted && outside(c.length));
@@ -677,7 +681,7 @@ function renderCycles() {
     const span = next ? core.daysBetween(p.startDate, next.startDate) : Math.max(1, core.daysBetween(p.startDate, today) + 1);
     const bleed = len ?? (open ? Math.max(1, core.daysBetween(p.startDate, today) + 1) : 0);
     const until = next ? next.startDate : core.addDays(today, 1);
-    // Logs with flow or pain first (the ones the health notes are about), then newest.
+    // Logs in date order; heavy flow and pain 4+ are marked in the list instead of moved.
     const notes = state.notes.filter((n) => n.date >= p.startDate && n.date < until)
       .sort((a, b) => (a.date < b.date ? -1 : 1));
     const expanded = expandedRows.has(p.id);
@@ -866,6 +870,8 @@ function renderSettings() {
       <p class="body-copy">${t("settings.lockBody")}</p>
       <label class="field" for="lockPin"><span>${t(pinLock.isEnabled() ? "settings.lockCurrent" : "settings.lockPin")}</span>
         <input type="password" id="lockPin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"></label>
+      ${pinLock.isEnabled() ? "" : `<label class="field" for="lockPin2"><span>${t("settings.lockPin2")}</span>
+        <input type="password" id="lockPin2" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"></label>`}
       <p class="field-error" id="lockError" role="alert"></p>
       <button class="plain-button" type="button" data-action="${pinLock.isEnabled() ? "lock-off" : "lock-on"}">${t(pinLock.isEnabled() ? "settings.lockOff" : "settings.lockOn")}</button>
     </section>
@@ -996,7 +1002,7 @@ const actions = {
   },
   "save-day": () => {
     const dates = dirtyDates();
-    if (!dates.includes(sheet.date)) dates.push(sheet.date);
+    if (!dates.length) dates.push(sheet.date);
     // The date on screen last, so an error on another date can switch to it first.
     dates.sort((a, b) => (a === sheet.date) - (b === sheet.date));
     let next = state;
@@ -1006,7 +1012,8 @@ const actions = {
       const pending = d.custom.trim().slice(0, 24);
       const symptoms = new Set(d.symptoms);
       if (pending) symptoms.add(symptomKey(pending));
-      const result = core.saveNote(next, { id: d.noteId, date, flow: d.flow, pain: d.pain, symptoms: [...symptoms], note: d.note });
+      const id = d.noteId && next.notes.some((n) => n.id === d.noteId) ? d.noteId : null;
+      const result = core.saveNote(next, { id, date, flow: d.flow, pain: d.pain, symptoms: [...symptoms], note: d.note });
       if (result.error) {
         if (date !== sheet.date) switchDate(date);
         sheetResult(result, null);
@@ -1025,8 +1032,13 @@ const actions = {
       renderSheet("[data-action='delete-day']");
       return;
     }
+    const others = dirtyDates().filter((date) => date !== sheet.date);
     commit(core.deleteNote(state, sheet.noteId), "toast.deleted");
-    closeSheet();
+    if (!others.length) { closeSheet(); return; }
+    delete sheet.drafts[sheet.date];
+    Object.assign(sheet, { confirm: false, closeArmed: false }, draftFor(sheet.date));
+    renderSheet();
+    focusSheet();
   },
 
   "edit-period": (el) => openPeriodEditor(el.dataset.id),
@@ -1050,8 +1062,7 @@ const actions = {
     const ongoing = sheetRoot.querySelector("#editOngoing")?.checked;
     Object.assign(sheet, { start, end, ongoing });
     if (!ongoing && !end) {
-      sheet.error = t("err.endInvalid");
-      renderSheet("[role=alert]");
+      sheetResult({ error: "err.endMissing" }, null);
       return;
     }
     const result = core.savePeriod(state, { id: sheet.id, startDate: start, endDate: ongoing ? "" : end, cycleMode: sheet.mode, createdAt: sheet.createdAt });
@@ -1084,6 +1095,7 @@ const actions = {
     const input = document.querySelector("#lockPin");
     const pin = input?.value || "";
     if (!pinLock.isValidPin(pin)) { document.querySelector("#lockError").textContent = t("err.pinFormat"); input?.focus(); return; }
+    if (document.querySelector("#lockPin2")?.value !== pin) { document.querySelector("#lockError").textContent = t("err.pinMismatch"); document.querySelector("#lockPin2")?.focus(); return; }
     await pinLock.setPin(pin);
     render();
     showToast(t("toast.lockOn"));
@@ -1286,8 +1298,9 @@ async function initCloud() {
     if (user) {
       let owner = null;
       try { owner = localStorage.getItem(OWNER_KEY); } catch { /* storage blocked: treat as first sign-in */ }
-      if (owner && owner !== user.uid && (state.periods.length || state.notes.length)) {
+      if (owner && owner !== user.uid && (state.periods.length || state.notes.length || state.deletedPeriodIds.length || state.deletedNoteIds.length)) {
         cloud.user = null;
+        cloud.rejected = true;
         authMod.signOut(cloud.auth);
         showToast(t("toast.otherAccount"));
         return;
@@ -1331,8 +1344,9 @@ async function cloudAuthToggle() {
       return;
     }
     try {
+      cloud.rejected = false;
       await authMod.signInWithPopup(cloud.auth, provider);
-      showToast(t("toast.signedIn"));
+      if (!cloud.rejected) showToast(t("toast.signedIn"));
     } catch (error) {
       if (!REDIRECT_FALLBACK.includes(error.code) || error.code === "auth/popup-closed-by-user") throw error;
       await authMod.signInWithRedirect(cloud.auth, provider);
@@ -1351,7 +1365,10 @@ const lockRoot = document.querySelector("#lockRoot");
 const lockOptions = () => ({
   t,
   cover: [app, document.querySelector(".bottom-nav"), sheetRoot],
-  onUnlock: () => document.querySelector("#app h1")?.focus({ preventScroll: true }),
+  onUnlock: () => {
+    if (sheet) { renderSheet(); focusSheet(); }
+    else app.querySelector("h1")?.focus({ preventScroll: true });
+  },
 });
 pinLock.lock(lockRoot, lockOptions());
 
@@ -1364,7 +1381,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js");
+  navigator.serviceWorker.register("./service-worker.js").catch((error) => console.warn("Offline mode unavailable.", error));
 }
 
 render();

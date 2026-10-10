@@ -5,7 +5,7 @@
 const KEY = "cycle-garden-lock-v1";
 const RELOCK_MS = 5 * 60 * 1000; // back in front after this long in the background → locked
 const MAX_TRIES = 5;
-const WAIT_MS = 30 * 1000;
+const WAIT_MS = 30 * 1000; // held in memory: a reload resets it, which is fine for a glance-proof screen lock
 
 function read() {
   try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; }
@@ -44,7 +44,11 @@ export function clearPin() {
 export async function verify(pin) {
   const saved = read();
   if (!saved?.hash) return true;
-  return (await derive(pin, unhex(saved.salt))) === saved.hash;
+  try {
+    return (await derive(pin, unhex(saved.salt))) === saved.hash;
+  } catch {
+    return false; // a damaged record never unlocks; "Forgot PIN" explains the way out
+  }
 }
 
 // ---------- lock screen ----------
@@ -85,8 +89,12 @@ export function lock(root, { t, onUnlock, cover = [] }) {
   const paint = () => dots.forEach((dot, i) => dot.classList.toggle("on", i < entry.length));
   const say = (text) => { status.textContent = text; };
 
+  let busy = false;
   const submit = async () => {
-    if (await verify(entry)) {
+    busy = true;
+    const ok = await verify(entry);
+    busy = false;
+    if (ok) {
       locked = false;
       tries = 0;
       root.hidden = true;
@@ -110,6 +118,7 @@ export function lock(root, { t, onUnlock, cover = [] }) {
 
   const press = (key) => {
     if (key === "forgot") { say(t("lock.forgotHelp")); return; }
+    if (busy) return;
     if (Date.now() < waitUntil) { say(t("lock.wait", { n: Math.ceil((waitUntil - Date.now()) / 1000) })); return; }
     if (key === "back") entry = entry.slice(0, -1);
     else if (entry.length < length) entry += key;
@@ -124,6 +133,8 @@ export function lock(root, { t, onUnlock, cover = [] }) {
   // Keys are captured so nothing reaches the app underneath while it is locked.
   function onKey(event) {
     if (!locked) return;
+    if (event.key !== "Tab") event.stopImmediatePropagation();
+    if (event.key === "Escape") event.preventDefault();
     if (/^\d$/.test(event.key)) { event.preventDefault(); press(event.key); }
     else if (event.key === "Backspace") { event.preventDefault(); press("back"); }
     else if (event.key === "Tab") {

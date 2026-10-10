@@ -5,8 +5,8 @@
   --bg: #090912;
   --surface: #17152a;
   --ink: #fff8ff;
-  --muted: rgba(255, 248, 255, 0.84);
-  --soft: rgba(255, 248, 255, 0.74);
+  --muted: rgba(255, 248, 255, 0.88);
+  --soft: rgba(255, 248, 255, 0.8);
   --faint: rgba(255, 248, 255, 0.16);
   --line: rgba(255, 255, 255, 0.14);
   --glass: rgba(255, 255, 255, 0.075);
@@ -226,7 +226,7 @@ h1:focus { outline: none; }
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   width: 100%; min-height: 44px; padding: 10px 14px;
   border: 1px solid rgba(255, 197, 168, 0.45); border-radius: 16px;
-  background: rgba(255, 197, 168, 0.12); color: var(--peach); font-size: 13px; text-align: left;
+  background: rgba(40, 24, 30, 0.55); color: #ffe2d4; font-size: 13px; text-align: left;
 }
 .problem-banner .link { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; white-space: nowrap; }
 .problem-banner svg { width: 16px; height: 16px; }
@@ -252,7 +252,7 @@ h1:focus { outline: none; }
   text-align: center;
 }
 .ring-label { color: var(--soft); font-size: 12px; }
-.ring-head { font-size: 19px; line-height: 1.22; text-wrap: balance; }
+.ring-head { font-size: 19px; line-height: 1.22; text-wrap: balance; word-break: keep-all; }
 
 .facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
 .fact {
@@ -282,7 +282,7 @@ h1:focus { outline: none; }
 .notice p, .notice-text { color: var(--peach); font-size: 13px; line-height: 1.5; }
 .notice .soft-button { flex-shrink: 0; }
 
-.week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; width: 100%; }
+.week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; width: calc(100% + 12px); margin-inline: -6px; }
 .date-pill {
   position: relative;
   display: grid;
@@ -444,8 +444,8 @@ textarea::placeholder { color: rgba(255, 248, 255, 0.5); }
 .chart-bar { fill: var(--violet); }
 .chart-bar.atypical { fill: var(--peach); }
 .chart-bar.excluded { fill: rgba(255, 255, 255, 0.14); stroke: rgba(255, 255, 255, 0.4); stroke-dasharray: 3 3; }
-.chart-value { fill: var(--ink); font-size: 13px; font-weight: 600; }
-.chart-axis { fill: var(--soft); font-size: 13px; }
+.chart-value { fill: var(--ink); font-size: 14px; font-weight: 600; }
+.chart-axis { fill: var(--soft); font-size: 14px; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; color: var(--soft); font-size: 12px; }
 .chart-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .swatch { display: inline-block; width: 14px; height: 10px; border-radius: 3px; }

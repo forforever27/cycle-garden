@@ -159,9 +159,9 @@ test("H4 on 8 Oct is inside the window (day 15 of 20), not past it", () => {
   const s = core.getStatus(history(sample), "2026-10-08");
   expect([s.kind, s.windowDay, s.windowLength], ["window", 15, 20]);
 });
-test("H5 regular 28-day cycles: steady, 1-day window", () => {
+test("H5 regular 28-day cycles: steady, window held at the 5-day minimum (brief: never one exact date)", () => {
   const p = core.predict(history([["2026-05-01","2026-05-05"],["2026-05-29","2026-06-02"],["2026-06-26","2026-06-30"],["2026-07-24","2026-07-28"]]));
-  expect([p.steady, p.earliest, p.latest], [true, "2026-08-21", "2026-08-21"]);
+  expect([p.steady, p.earliest, p.latest], [true, "2026-08-21", "2026-08-25"]);
 });
 test("H6 only the last 6 cycles count (an older 45-day cycle drops out)", () => {
   const starts = ["2025-01-01", "2025-02-15"]; // 45 days: not a missed log (< 2x 30), so only slice(-6) removes it
@@ -192,10 +192,10 @@ test("H10 open period: status period with day count; long flag after day 10", ()
 });
 test("H11 states move waiting → prep → window → late", () => {
   const s = history([["2026-05-01","2026-05-05"],["2026-05-29","2026-06-02"],["2026-06-26","2026-06-30"],["2026-07-24","2026-07-28"]]);
-  // window 2026-08-21 only, prepDays 5 → prep from 08-16
-  expect(["2026-08-10","2026-08-15","2026-08-16","2026-08-17","2026-08-20","2026-08-21","2026-08-22","2026-08-25"].map((d) => core.getStatus(s, d).kind),
+  // window 2026-08-21 to 08-25 (5-day minimum), prepDays 5 → prep from 08-16
+  expect(["2026-08-10","2026-08-15","2026-08-16","2026-08-17","2026-08-20","2026-08-21","2026-08-26","2026-08-29"].map((d) => core.getStatus(s, d).kind),
          ["waiting","waiting","prep","prep","prep","window","late","late"]);
-  expect(core.getStatus(s, "2026-08-25").daysLate, 4);
+  expect(core.getStatus(s, "2026-08-29").daysLate, 4);
 });
 test("H12 a rough window has a 14-day floor and is at least 7 days wide", () => {
   const p = core.predict(history([["2026-08-22","2026-08-24"],["2026-09-01","2026-09-03"],["2026-09-11","2026-09-13"]]));
@@ -258,11 +258,11 @@ test(".ics: the four discreet names only, stable UIDs, window spans earliest..la
           ics.includes("UID:checkin-after-20260924@cycle-garden"), ics.endsWith("END:VCALENDAR\r\n")],
          [["Body check-in", "Personal prep", "Personal window", "Restock essentials"], true, true, true, true, true, true, true]);
 });
-test(".ics: a 1-day window still gets the day-after check-in; past prep is skipped; restock never on 29-31", () => {
+test(".ics: a minimum-width window still gets the day-after check-in; past prep is skipped; restock never on 29-31", () => {
   const regular = history([["2026-05-01","2026-05-05"],["2026-05-29","2026-06-02"],["2026-06-26","2026-06-30"],["2026-07-24","2026-07-28"]]);
   const ics = core.buildIcs(regular, new Date(), "2026-08-18");
   const restockDay = Number(ics.match(/UID:restock@cycle-garden\r\nDTSTAMP:\S+\r\nDTSTART;VALUE=DATE:(\d{8})/)[1].slice(6));
-  expect([ics.includes("UID:checkin-after-20260821@cycle-garden\r\nDTSTAMP"), ics.includes("DTSTART;VALUE=DATE:20260822"), ics.includes("Personal prep"), restockDay <= 28],
+  expect([ics.includes("UID:checkin-after-20260821@cycle-garden\r\nDTSTAMP"), ics.includes("DTSTART;VALUE=DATE:20260826"), ics.includes("Personal prep"), restockDay <= 28],
          [true, true, false, true]);
 });
 test(".ics: after the window has passed, only a check-in tomorrow (no past events)", () => {
@@ -419,6 +419,18 @@ test("summary escapes user text and has no script", () => {
   expect([html.includes("<b>x</b>"), html.includes("&lt;b&gt;x&lt;/b&gt;"), /<script/i.test(html)], [false, true, false]);
 });
 test("PIN must be 4-6 digits", () => { expect(["123", "1234", "123456", "1234567", "12a4", ""].map(isValidPin), [false, true, true, false, false, false]); });
+test("two starts on the same day are one period, not a 0-day cycle", () => {
+  const st = core.normalize({ periods: [["2026-01-01","2026-01-05"],["2026-01-29","2026-02-02"],["2026-01-29","2026-02-02"],["2026-02-26","2026-03-02"]].map((x, i) => ({ id: "p" + i, startDate: x[0], endDate: x[1] })) });
+  expect(core.getCycles(st).map((c) => c.length), [28, 28]);
+});
+test("a recent window is at least 5 days wide", () => {
+  const st = core.normalize({ periods: ["2026-01-01","2026-01-29","2026-02-26","2026-03-26"].map((d, i) => ({ id: "p" + i, startDate: d, endDate: core.addDays(d, 4) })) });
+  const p = core.predict(st);
+  expect([p.level, core.daysBetween(p.earliest, p.latest) + 1], ["recent", 5]);
+});
+test("reminder time must be a real clock time", () => {
+  expect([core.normalize({ settings: { reminderTime: "99:99" } }).settings.reminderTime, core.normalize({ settings: { reminderTime: "23:59" } }).settings.reminderTime], ["09:00", "23:59"]);
+});
 test("isIso rejects impossible dates like 30 Feb", () => { expect([core.isIso("2026-02-30"), core.isIso("2026-04-31"), core.isIso("2024-02-29")], [false, false, true]); });
 test("records without ids get the same id on every device (no duplicate on merge)", () => {
   const raw = { periods: [{ startDate: "2026-09-01", endDate: "2026-09-05" }], notes: [{ date: "2026-09-02", note: "x" }] };

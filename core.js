@@ -135,7 +135,7 @@ export function normalize(raw) {
   const prepDays = Number(s.prepDays);
   const settings = {
     prepDays: Number.isFinite(prepDays) ? Math.min(14, Math.max(1, Math.round(prepDays))) : 5,
-    reminderTime: typeof s.reminderTime === "string" && /^\d{2}:\d{2}$/.test(s.reminderTime) ? s.reminderTime : "09:00",
+    reminderTime: typeof s.reminderTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(s.reminderTime) ? s.reminderTime : "09:00",
     updatedAt: typeof s.updatedAt === "string" ? s.updatedAt : "",
   };
 
@@ -465,8 +465,15 @@ export function deleteNote(state, id) {
 // counted=false when the user excluded it, or (auto) when it looks like a period was never
 // logged: at least twice the median of the other cycles AND a one-off. A long cycle that
 // repeats (another cycle within 25% of it) is a real pattern and always counts.
+// Two starts less than MIN_GAP days apart are one period logged twice (two devices before a
+// sync), never a real cycle: only the first one starts a cycle. findProblems still flags them.
+const MIN_GAP = 10;
 export function getCycles(state) {
-  const ps = sortedPeriods(state);
+  const ps = [];
+  for (const p of sortedPeriods(state)) {
+    const prev = ps[ps.length - 1];
+    if (!prev || daysBetween(prev.startDate, p.startDate) >= MIN_GAP) ps.push(p);
+  }
   const cycles = [];
   for (let i = 1; i < ps.length; i += 1) {
     cycles.push({ from: ps[i - 1], to: ps[i], length: daysBetween(ps[i - 1].startDate, ps[i].startDate) });
@@ -495,7 +502,7 @@ export function predict(state) {
   const level = lengths.length < 3 ? "rough" : "recent";
   const pad = level === "rough" ? 3 : 0;
   const lo = Math.max(14, min - pad);
-  const hi = Math.max(level === "rough" ? lo + 6 : lo, max + pad);
+  const hi = Math.max(level === "rough" ? lo + 6 : lo + 4, max + pad);
   return {
     level,
     count: lengths.length,

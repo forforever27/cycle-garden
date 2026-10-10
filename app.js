@@ -687,8 +687,8 @@ function renderCycles() {
     const expanded = expandedRows.has(p.id);
     const shownNotes = expanded ? notes : notes.slice(0, 3);
     const badges = [
-      problems.has(p.id) && `<span class="badge warn">${t("list.problem")}</span>`,
-      cycle && cycle.autoExcluded && `<span class="badge">${t(cycle.tooShort ? "list.tooClose" : "list.missed")}</span>`,
+      problems.has(p.id) && problems.get(p.id) !== "err.tooClose" && `<span class="badge warn">${t("list.problem")}</span>`,
+      cycle && cycle.autoExcluded && `<span class="badge${cycle.tooShort ? " warn" : ""}">${t(cycle.tooShort ? "list.tooClose" : "list.missed")}</span>`,
       cycle && !cycle.counted && !cycle.autoExcluded && `<span class="badge">${t("list.notCounted")}</span>`,
     ].filter(Boolean).join("");
     const title = len ? t("list.range", { start: esc(fmtShort(p.startDate)), end: esc(fmtShort(p.endDate)) }) : t("list.started", { date: esc(fmtShort(p.startDate)) });

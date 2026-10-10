@@ -25,7 +25,7 @@ const STRINGS = {
     "how.button": "怎么算的？",
     "how.text": "取最近 {n} 个周期里最短的 {min} 天和最长的 {max} 天，从上次开始日 {date} 往后算。周期越不规律，窗口越宽。",
     "how.rough": "因为只有 {n} 个周期，两边各多留 3 天。",
-    "how.excluded": "有 {n} 个周期没算进去（可能漏记了一次），可以在「周期」里改。",
+    "how.excluded": "有 {n} 个周期没算进去（可能漏记或记重了，或是你选了不算），可以在「周期」里查看。",
     "problems.banner": "{n} 条记录的日期需要修正", "problems.open": "去修正",
 
     "week.label": "这一周", "recent.title": "最近记录", "summary.flow": "流量：{v}", "summary.pain": "疼痛：{n}/5",
@@ -45,7 +45,7 @@ const STRINGS = {
 
     "editor.title": "编辑经期", "editor.newTitle": "补记一次经期", "editor.start": "开始日期", "editor.end": "结束日期", "editor.ongoing": "还没结束",
     "editor.count": "这次周期算进预测吗？", "editor.count.auto": "自动", "editor.count.include": "算", "editor.count.exclude": "不算",
-    "editor.countHelp": "如果这次之后漏记了一次经期，选「不算」，预测就不会被拉长。",
+    "editor.countHelp": "漏记了下一次经期时选「不算」，预测就不会被拉长；两次开始太近但都没记错时，可以选「算」或「不算」。",
     "editor.save": "保存", "editor.delete": "删除这次经期", "editor.confirmDelete": "再按一次确认删除",
 
     "cycles.eyebrow": "周期", "cycles.title": "你的节奏",
@@ -130,7 +130,7 @@ const STRINGS = {
     "how.button": "How is this calculated?",
     "how.text": "Your shortest ({min} days) and longest ({max} days) of the last {n} cycles, counted from your last start on {date}. The less regular your cycles, the wider the window.",
     "how.rough": "With only {n} cycle(s), 3 extra days are added on each side.",
-    "how.excluded": "{n} cycle(s) left out because a period was probably not logged. You can change this in Cycles.",
+    "how.excluded": "Cycles left out: {n} (a likely missed or duplicate log, or one you chose not to count). See Cycles.",
     "problems.banner": "Dates to fix: {n}", "problems.open": "Fix",
 
     "week.label": "This week", "recent.title": "Recent logs", "summary.flow": "Flow: {v}", "summary.pain": "Pain: {n}/5",
@@ -150,12 +150,12 @@ const STRINGS = {
 
     "editor.title": "Edit period", "editor.newTitle": "Add a past period", "editor.start": "Start date", "editor.end": "End date", "editor.ongoing": "Still going",
     "editor.count": "Count this cycle in predictions?", "editor.count.auto": "Auto", "editor.count.include": "Count", "editor.count.exclude": "Don't count",
-    "editor.countHelp": "If you missed logging the period after this one, choose Don't count so the prediction isn't stretched.",
+    "editor.countHelp": "If you missed logging the next period, choose Don't count so the prediction isn't stretched. If two starts are close but both are right, choose Count or Don't count.",
     "editor.save": "Save", "editor.delete": "Delete this period", "editor.confirmDelete": "Tap again to delete",
 
     "cycles.eyebrow": "Cycles", "cycles.title": "Your pattern",
     "chart.title": "Cycle length", "chart.typical": "Typical range 21–35 days", "chart.atypical": "Outside the typical range", "chart.empty": "After two periods, each cycle's length shows here.",
-    "chart.days": "days", "chart.notCounted": "not counted",
+    "chart.days": "days", "chart.notCounted": "Not counted",
     "stats.shortest": "Shortest", "stats.longest": "Longest", "stats.average": "Average", "stats.period": "Period", "stats.days": "{n} days",
     "flags.title": "Worth keeping an eye on",
     "flag.short": "Several recent cycles were shorter than 21 days.", "flag.long": "Several recent cycles were longer than 35 days.",

@@ -29,7 +29,7 @@ async function derive(pin, salt) {
 
 export const isValidPin = (pin) => /^\d{4,6}$/.test(pin);
 export const isEnabled = () => !!read()?.hash;
-export const pinLength = () => { const n = read()?.length; return n >= 4 && n <= 6 ? n : 4; };
+export const pinLength = () => { const n = read()?.length; return Number.isInteger(n) && n >= 4 && n <= 6 ? n : 4; };
 
 export async function setPin(pin) {
   if (!isValidPin(pin)) return false;

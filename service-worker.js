@@ -1,4 +1,4 @@
-const CACHE_NAME = "cycle-garden-v16";
+const CACHE_NAME = "cycle-garden-v17";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,6 +7,10 @@ const ASSETS = [
   "./core.js",
   "./report.js",
   "./lock.js",
+  "./moonrise.js",
+  "./fonts/InstrumentSerif-Regular.woff2",
+  "./fonts/NotoSerifSC-cg-400.woff2",
+  "./fonts/NotoSerifSC-cg-500.woff2",
   "./i18n.js",
   "./firebase-config.js",
   "./manifest.json",

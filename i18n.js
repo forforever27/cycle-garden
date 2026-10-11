@@ -28,6 +28,8 @@ const STRINGS = {
     "how.excluded": "有 {n} 个周期没算进去（可能漏记或记重了，或是你选了不算），可以在「周期」里查看。",
     "problems.banner": "{n} 条记录的日期需要修正", "problems.open": "去修正",
 
+    "phase.learning": "认识你", "phase.waiting": "平静期", "phase.prep": "准备期", "phase.window": "快来了", "phase.late": "晚了一些", "phase.period": "经期",
+    "big.day": "第{n}天", "info.open": "看看依据", "info.title": "依据与准备", "info.next": "下次可能", "prep.link": "准备清单 {d}/{n}",
     "week.label": "这一周", "recent.title": "最近记录", "summary.flow": "流量：{v}", "summary.pain": "疼痛：{n}/5",
     "prep.title": "准备清单", "prep.pads": "卫生巾", "prep.liners": "护垫", "prep.relief": "止痛药", "prep.done": "都准备好了",
     "stat.last": "上次经期", "stat.lastMeta": "持续 {n} 天", "stat.lastOpen": "进行中", "stat.usual": "常见周期",
@@ -133,6 +135,8 @@ const STRINGS = {
     "how.excluded": "Cycles left out: {n} (a likely missed or duplicate log, or one you chose not to count). See Cycles.",
     "problems.banner": "Dates to fix: {n}", "problems.open": "Fix",
 
+    "phase.learning": "Getting to know you", "phase.waiting": "Calm days", "phase.prep": "Getting ready", "phase.window": "Any day now", "phase.late": "A little late", "phase.period": "Period",
+    "big.day": "Day {n}", "info.open": "See why", "info.title": "Details and prep", "info.next": "Next period, likely", "prep.link": "Prep kit {d}/{n}",
     "week.label": "This week", "recent.title": "Recent logs", "summary.flow": "Flow: {v}", "summary.pain": "Pain: {n}/5",
     "prep.title": "Prep kit", "prep.pads": "Pads", "prep.liners": "Liners", "prep.relief": "Pain relief", "prep.done": "All packed",
     "stat.last": "Last period", "stat.lastMeta": "Lasted {n} days", "stat.lastOpen": "In progress", "stat.usual": "Usual cycle",

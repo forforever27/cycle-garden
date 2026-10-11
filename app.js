@@ -1,7 +1,8 @@
 import * as report from "./report.js";
 import * as pinLock from "./lock.js";
 import * as core from "./core.js";
-import { t, setLang, getLang, other, fmtShort, fmtLong, fmtDay, fmtWeekday, fmtMonth, greetingKey } from "./i18n.js";
+import * as moonrise from "./moonrise.js";
+import { t, setLang, getLang, other, fmtShort, fmtLong, fmtDay, fmtWeekday, fmtMonth } from "./i18n.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 // Same key as v1 so existing data loads; the raw v1 value is copied once to BACKUP_KEY before
@@ -23,7 +24,7 @@ let state = loadState();
 let view = "home";
 let sheet = null;
 let sheetOpener = null;
-let showHow = false;
+let moonState = null;
 let calendarNeedsScroll = true;
 setLang(state.language);
 
@@ -99,12 +100,21 @@ function render() {
   const views = { home: renderHome, cycles: renderCycles, calendar: renderCalendar, settings: renderSettings };
   app.innerHTML = views[view]();
   renderNav();
+  placeMoon();
   if (view === "calendar" && calendarNeedsScroll) {
     calendarNeedsScroll = false;
     scrollToMonth(core.todayIso().slice(0, 7), false);
   }
   renderSheet();
 }
+
+// The Today moon sits below the last line of text (measured, so it holds at any screen height).
+function placeMoon() {
+  if (view !== "home") { moonrise.set(null); return; }
+  const bottom = app.querySelector(".home-actions")?.getBoundingClientRect().bottom ?? 0;
+  moonrise.set({ ...moonState, clearTop: bottom - phone.getBoundingClientRect().top + app.scrollTop });
+}
+window.addEventListener("resize", placeMoon);
 
 function renderNav() {
   document.querySelectorAll(".nav-item").forEach((button) => {
@@ -121,7 +131,6 @@ function renderNav() {
 function setView(next) {
   view = next;
   sheet = null;
-  showHow = false;
   if (next === "calendar") calendarNeedsScroll = true;
   app.scrollTop = 0;
   render();
@@ -177,43 +186,16 @@ function rangeText(pred) {
   return pred.steady ? t("range.steady", { n: pred.count }) : t("range.variable", { n: pred.count });
 }
 
-function ringSvg(st, pred, today) {
-  const R = 100;
-  const C = 2 * Math.PI * R;
+// Moonrise (Locked 11 Oct): the moon's visible height is how far through the cycle today is;
+// it is rose during a period and lilac from prep through a late start.
+function homeMoon(st, pred) {
   const last = core.latestPeriod(state);
-  const parts = [`<circle class="ring-track" cx="120" cy="120" r="${R}"/>`];
-  if (last) {
-    let total = 28;
-    if (pred.level !== "none") total = Math.max(total, core.daysBetween(last.startDate, pred.latest) + 1);
-    total = Math.max(total, st.cycleDay + 2);
-    const frac = (d) => Math.min(1, Math.max(0, d / total));
-    const arc = (from, to, cls) => {
-      const length = Math.max(0, (frac(to) - frac(from)) * C);
-      return `<circle class="${cls}" cx="120" cy="120" r="${R}" stroke-dasharray="${length.toFixed(1)} ${C.toFixed(1)}" stroke-dashoffset="${(-frac(from) * C).toFixed(1)}"/>`;
-    };
-    if (pred.level !== "none" && st.kind !== "period") {
-      parts.push(arc(core.daysBetween(last.startDate, pred.earliest), core.daysBetween(last.startDate, pred.latest) + 1, "ring-window"));
-    }
-    const bleedDays = core.periodLength(last) ?? Math.min(st.cycleDay, core.daysBetween(last.startDate, today) + 1);
-    parts.push(arc(0, bleedDays, "ring-period"));
-    const angle = frac(st.cycleDay - 0.5) * 2 * Math.PI;
-    parts.push(`<circle class="ring-today" cx="${(120 + R * Math.cos(angle)).toFixed(1)}" cy="${(120 + R * Math.sin(angle)).toFixed(1)}" r="8"/>`);
-  }
-  return `<svg class="ring-svg" viewBox="0 0 240 240" aria-hidden="true">
-      <g transform="rotate(-90 120 120)">${parts.join("")}</g>
-    </svg>`;
-}
-
-function renderWeek(today, pred) {
-  return Array.from({ length: 7 }, (_, index) => {
-    const iso = core.addDays(today, index - 3);
-    const info = core.dayInfo(state, iso, today, pred);
-    const cls = [info.period && "period", info.predicted && "predicted", info.today && "today", info.hasNote && "has-note"].filter(Boolean).join(" ");
-    const extra = [info.today && t("legend.today"), info.period && t("legend.period"), info.predicted && t("legend.predicted"), info.hasNote && t("legend.note")].filter(Boolean);
-    return `<button class="date-pill ${cls}" type="button" data-action="open-day" data-date="${iso}" ${info.future ? "disabled" : ""}
-        aria-label="${esc([fmtDay(iso), ...extra].join(" · "))}">
-        <small>${esc(fmtWeekday(iso))}</small><strong>${dayNum(iso)}</strong></button>`;
-  }).join("");
+  if (!last || !st.cycleDay) return { rise: 0.15, tint: "cream" };
+  let total = 28;
+  if (pred.level !== "none") total = Math.max(total, core.daysBetween(last.startDate, pred.latest) + 1);
+  const rise = Math.min(1, Math.max(0.04, st.cycleDay / total));
+  const tint = st.kind === "period" ? "rose" : ["prep", "window", "late"].includes(st.kind) ? "lilac" : "cream";
+  return { rise, tint };
 }
 
 function prepDone() {
@@ -231,6 +213,9 @@ function prepCard(st) {
     </article>`;
 }
 
+// One focal object (the moon, drawn by moonrise.js), one headline, one sentence, one action.
+// Everything else (range, how it is worked out, prep kit, last period, recent logs) is in the
+// details sheet behind "看看依据".
 function renderHome() {
   const today = core.todayIso();
   const st = core.getStatus(state, today);
@@ -238,12 +223,45 @@ function renderHome() {
   const copy = statusCopy(st);
   const problems = core.findProblems(state, today);
   const open = core.openPeriod(state);
+  const primaryKey = open ? "action.end" : "action.start";
+  const n = st.kind === "period" ? st.day : st.cycleDay;
+  const showDay = st.kind !== "empty" && n;
+  const lead = ["period", "empty"].includes(st.kind) ? "" : copy.head;
+  const glue = (text) => text.replace(/(\d+) /g, "$1\u00a0");
+  moonState = homeMoon(st, pred);
+
+  return `
+    <header class="home-top">
+      <p class="eyebrow">${esc(fmtDay(today))}</p>
+      <button class="language-pill" type="button" data-action="toggle-language" aria-label="${t("lang.toggleLabel")}" lang="${langAttr(other())}">${t("lang.toggle")}</button>
+    </header>
+
+    <section class="home" aria-labelledby="statusHead">
+      ${st.kind !== "empty" ? `<p class="phase phase-${st.kind}">${t(`phase.${st.kind}`)}</p>` : ""}
+      <h1 id="statusHead" class="${showDay ? "home-day" : "home-head"}" tabindex="-1">${showDay ? t("big.day", { n: `<b>${n}</b>` }) : glue(copy.head)}</h1>
+      ${lead ? `<p class="home-lead">${glue(lead)}</p>` : ""}
+      <p class="home-sub">${copy.sub}</p>
+      ${st.kind === "period" && st.long ? `<div class="notice"><p>${t("status.period.long")}</p><button class="soft-button small" type="button" data-action="edit-period" data-id="${esc(st.open.id)}">${t("status.period.fix")}</button></div>` : ""}
+      <div class="home-actions">
+        <button class="primary-action glass" type="button" data-action="${open ? "end-period" : "start-period"}">${t(primaryKey)}</button>
+        <div class="home-links">
+          <button class="text-button" type="button" data-action="open-info">${t("info.open")}${ICON_CHEVRON}</button>
+          ${["prep", "window", "late"].includes(st.kind) ? `<button class="text-button" type="button" data-action="goto-prep">${t("prep.link", { d: prepDone().length, n: PREP_ITEMS.length })}${ICON_CHEVRON}</button>` : ""}
+          ${problems.length ? `<button class="text-button warn" type="button" data-action="goto-cycles"><i aria-hidden="true"></i>${t("problems.banner", { n: problems.length })}${ICON_CHEVRON}</button>` : ""}
+        </div>
+      </div>
+    </section>`;
+}
+
+// The details sheet: what Home leaves out.
+function infoSheet() {
+  const today = core.todayIso();
+  const st = core.getStatus(state, today);
+  const pred = st.pred || core.predict(state);
   const last = core.latestPeriod(state);
   const stats = core.getStats(state);
-  const primaryKey = open ? "action.end" : "action.start";
   const excluded = core.getCycles(state).filter((c) => !c.counted).length;
-  const showRange = pred.level !== "none" && !["empty", "learning", "period"].includes(st.kind);
-  const how = showRange
+  const how = pred.level !== "none"
     ? [t("how.text", { n: pred.count, min: pred.min, max: pred.max, date: fmtShort(pred.last.startDate) }),
        pred.level === "rough" ? t("how.rough", { n: pred.count }) : "",
        excluded ? t("how.excluded", { n: excluded }) : ""].filter(Boolean).join(" ")
@@ -251,45 +269,14 @@ function renderHome() {
   const usual = pred.level !== "none"
     ? (pred.min === pred.max ? t("stat.usualOne", { a: pred.min }) : t("stat.usualValue", { a: pred.min, b: pred.max }))
     : t("stat.none");
-
-  return `
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">${esc(fmtDay(today))}</p>
-        <h1 tabindex="-1">${t(greetingKey(new Date().getHours()))}</h1>
-      </div>
-      <span class="moon-inline" aria-hidden="true"></span>
-      <button class="language-pill" type="button" data-action="toggle-language" aria-label="${t("lang.toggleLabel")}" lang="${langAttr(other())}">${t("lang.toggle")}</button>
-    </header>
-
-    <section class="cycle-card glass" aria-labelledby="statusHead">
-      ${problems.length ? `<button class="problem-banner" type="button" data-action="goto-cycles"><span>${t("problems.banner", { n: problems.length })}</span><span class="link">${t("problems.open")}${ICON_CHEVRON}</span></button>` : ""}
-      <div class="ring-wrap">
-        ${ringSvg(st, pred, today)}
-        <div class="ring-center">
-          ${copy.label ? `<span class="ring-label">${copy.label}</span>` : ""}
-          <h2 class="ring-head" id="statusHead">${copy.head.replace(/(\d+) /g, "$1\u00a0")}</h2>
-        </div>
-      </div>
-      <p class="status-sub">${copy.sub}</p>
-      ${showRange ? `<div class="range-row">
-          <span class="range-chip">${rangeText(pred)}</span>
-          <button class="text-button" type="button" data-action="toggle-how" aria-expanded="${showHow}" aria-controls="howText">${t("how.button")}</button>
-        </div>
-        <p class="how" id="howText" ${showHow ? "" : "hidden"}>${how}</p>` : ""}
-      ${st.kind === "period" && st.long ? `<div class="notice"><p>${t("status.period.long")}</p><button class="soft-button small" type="button" data-action="edit-period" data-id="${esc(st.open.id)}">${t("status.period.fix")}</button></div>` : ""}
-      <div class="facts">
-        <span class="fact"><span class="fact-label">${t("stat.last")}</span> ${last ? esc(fmtShort(last.startDate)) : t("stat.none")}${last && core.periodLength(last) ? ` · ${t("stats.days", { n: core.periodLength(last) })}` : ""}</span>
-        <a class="fact link" href="#prepKit" data-action="goto-prep"><span class="fact-label">${t("prep.title")}</span> ${prepDone().length}/${PREP_ITEMS.length}</a>
-      </div>
-      <button class="primary-action" type="button" data-action="${open ? "end-period" : "start-period"}" aria-label="${t(primaryKey)}">
-        <strong>${t(primaryKey)}</strong><span lang="${langAttr(other())}">${t(primaryKey, {}, other())}</span>
-      </button>
-      <div class="week-row" role="group" aria-label="${t("week.label")}">${renderWeek(today, pred)}</div>
-    </section>
-
-    <section class="section-block">
-      ${prepCard(st)}
+  return `${sheetHead(t("info.title"))}
+    <div class="sheet-body">
+      ${pred.level !== "none" ? `<section class="sheet-section info-next" aria-labelledby="infoNext">
+          <h3 id="infoNext">${t("info.next")}</h3>
+          <p class="info-range">${esc(fmtShort(pred.earliest))} – ${esc(fmtShort(pred.latest))}</p>
+          <p class="help">${rangeText(pred)}</p>
+          <p class="body-copy">${how}</p>
+        </section>` : `<p class="body-copy">${t("status.learning.sub")}</p>`}
       <div class="stat-grid">
         <article class="stat glass">
           <span>${t("stat.last")}</span>
@@ -302,8 +289,20 @@ function renderHome() {
           <small>${pred.level !== "none" ? `${t("stats.average")} ${t("stats.days", { n: stats.average })}` : t("stat.needMore")}</small>
         </article>
       </div>
+      ${prepCard(st)}
       ${recentLogs()}
-    </section>`;
+    </div>`;
+}
+
+function openInfo(focus) {
+  if (!sheet) sheetOpener = describeOpener(document.activeElement);
+  sheet = { type: "info" };
+  renderSheet();
+  const target = focus && sheetRoot.querySelector(focus);
+  if (target) {
+    target.scrollIntoView({ block: "nearest" });
+    target.focus({ preventScroll: true });
+  } else focusSheet();
 }
 
 // The last three day logs, newest first. Empty until something is logged.
@@ -383,7 +382,7 @@ function describeOpener(el) {
   if (el.classList?.contains("nav-add")) return ".nav-add";
   if (!el.dataset?.action) return null;
   const attrs = ["date", "id", "value"].filter((k) => el.dataset[k]).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`).join("");
-  const scope = el.closest(".week-row, .recent-card, .months, .timeline, .facts, .cycle-card, .section-title, .notice");
+  const scope = el.closest(".recent-card, .months, .timeline, .home-actions, .section-title, .notice");
   const prefix = scope ? `.${[...scope.classList].find((c) => !["glass", "emphasis"].includes(c))} ` : "";
   return `${prefix}[data-action="${el.dataset.action}"]${attrs}`;
 }
@@ -392,7 +391,9 @@ function openDay(date) {
   const today = core.todayIso();
   const iso = date && date <= today ? date : today;
   if (!sheet) sheetOpener = describeOpener(document.activeElement);
-  sheet = { type: "day", date: iso, confirm: false, error: "", periodError: "", ...draftFor(iso) };
+  // Opened from the details sheet: closing the day log returns there.
+  const parent = sheet?.type === "info" ? { type: "info" } : null;
+  sheet = { parent, type: "day", date: iso, confirm: false, error: "", periodError: "", ...draftFor(iso) };
   renderSheet();
   focusSheet();
 }
@@ -462,7 +463,7 @@ function renderSheet(focusSelector) {
   const scroll = prev && prev.dataset.type === sheet.type ? prev.scrollTop : 0;
   sheetRoot.innerHTML = `<div class="sheet-backdrop" data-action="close-sheet"></div>
     <section class="sheet${prev ? " no-anim" : ""}" data-type="${sheet.type}" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-      ${sheet.type === "day" ? daySheet() : periodSheet()}
+      ${sheet.type === "day" ? daySheet() : sheet.type === "info" ? infoSheet() : periodSheet()}
     </section>`;
   const next = sheetRoot.querySelector(".sheet");
   next.scrollTop = scroll;
@@ -921,19 +922,8 @@ const actions = {
   "toggle-language": () => setLanguage(other()),
   "set-lang": (el) => setLanguage(el.dataset.value),
   "goto-cycles": () => setView("cycles"),
-  "goto-prep": (el, event) => {
-    event.preventDefault();
-    const card = app.querySelector("#prepKit");
-    card?.scrollIntoView({ block: "center", behavior: reduceMotion.matches ? "auto" : "smooth" });
-    card?.focus({ preventScroll: true });
-  },
-  "toggle-how": () => {
-    showHow = !showHow;
-    const how = app.querySelector("#howText");
-    const button = app.querySelector("[data-action='toggle-how']");
-    if (how) how.hidden = !showHow;
-    if (button) button.setAttribute("aria-expanded", String(showHow));
-  },
+  "open-info": () => openInfo(),
+  "goto-prep": () => openInfo("#prepKit"),
 
   "start-period": () => {
     const result = core.startPeriod(state, core.todayIso());
@@ -951,7 +941,7 @@ const actions = {
     if (done.has(el.dataset.value)) done.delete(el.dataset.value);
     else done.add(el.dataset.value);
     commit({ ...state, prep: { cycleStart: key, done: [...done], updatedAt: new Date().toISOString() } });
-    app.querySelector(`[data-action="prep-toggle"][data-value="${el.dataset.value}"]`)?.focus({ preventScroll: true });
+    document.querySelector(`[data-action="prep-toggle"][data-value="${el.dataset.value}"]`)?.focus({ preventScroll: true });
   },
 
   "open-day": (el) => openDay(el.dataset.date),
@@ -1366,14 +1356,17 @@ const lockOptions = () => ({
   t,
   cover: [app, document.querySelector(".bottom-nav"), sheetRoot],
   onUnlock: () => {
+    moonrise.wake();
     if (sheet) { renderSheet(); focusSheet(); }
     else app.querySelector("h1")?.focus({ preventScroll: true });
   },
 });
+moonrise.mount(document.querySelector("#sky"), { isActive: () => view === "home" && !pinLock.isLocked() });
 pinLock.lock(lockRoot, lockOptions());
 
 document.addEventListener("visibilitychange", () => {
   pinLock.onVisibility(lockRoot, lockOptions());
+  moonrise.wake();
   if (document.visibilityState === "visible" && core.todayIso() !== renderedDay) {
     renderedDay = core.todayIso();
     render();

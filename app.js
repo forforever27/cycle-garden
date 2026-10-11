@@ -390,7 +390,7 @@ function openDay(date) {
   const iso = date && date <= today ? date : today;
   if (!sheet) sheetOpener = describeOpener(document.activeElement);
   // Opened from the details sheet: closing the day log returns there.
-  const parent = sheet?.type === "info" ? { type: "info" } : null;
+  const parent = sheet?.type === "info" || sheet?.type === "cycle" ? { ...sheet } : null;
   sheet = { parent, type: "day", date: iso, confirm: false, error: "", periodError: "", ...draftFor(iso) };
   renderSheet();
   focusSheet();
@@ -399,7 +399,8 @@ function openDay(date) {
 function openPeriodEditor(id) {
   const period = id ? state.periods.find((p) => p.id === id) : null;
   // Opened from the day sheet: remember it (with any unsaved inputs) so closing returns there.
-  const parent = sheet?.type === "day" ? { ...sheet, note: sheetRoot.querySelector("#sheetNote")?.value ?? sheet.note } : null;
+  const parent = sheet?.type === "day" ? { ...sheet, note: sheetRoot.querySelector("#sheetNote")?.value ?? sheet.note }
+    : sheet?.type === "cycle" || sheet?.type === "info" ? { ...sheet } : null;
   if (!sheet) sheetOpener = describeOpener(document.activeElement);
   sheet = {
     parent,
@@ -446,6 +447,8 @@ function focusSheet() {
 }
 
 function renderSheet(focusSelector) {
+  // A cycle sheet whose period was just deleted (or merged away) gives way to what opened it.
+  while (sheet?.type === "cycle" && !cycleFacts(sheet.id)) sheet = sheet.parent || null;
   if (!sheet) {
     sheetRoot.innerHTML = "";
     sheetRoot.classList.remove("open");
@@ -461,7 +464,7 @@ function renderSheet(focusSelector) {
   const scroll = prev && prev.dataset.type === sheet.type ? prev.scrollTop : 0;
   sheetRoot.innerHTML = `<div class="sheet-backdrop" data-action="close-sheet"></div>
     <section class="sheet${prev ? " no-anim" : ""}" data-type="${sheet.type}" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-      ${sheet.type === "day" ? daySheet() : sheet.type === "info" ? infoSheet() : periodSheet()}
+      ${{ day: daySheet, info: infoSheet, cycle: cycleSheet }[sheet.type]?.() ?? periodSheet()}
     </section>`;
   const next = sheetRoot.querySelector(".sheet");
   next.scrollTop = scroll;
@@ -676,12 +679,73 @@ function recentSymptoms(asc) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 }
 
-let expandedRows = new Set();
 let cyclesMoon = "cream";
+
+function cycleFacts(id, today = core.todayIso()) {
+  const asc = core.sortedPeriods(state);
+  const idx = asc.findIndex((p) => p.id === id);
+  if (idx < 0) return null;
+  const p = asc[idx];
+  const next = asc[idx + 1];
+  const cycle = core.getCycles(state).find((c) => c.from.id === id);
+  const len = core.periodLength(p);
+  const open = !p.endDate && !next;
+  const span = next ? core.daysBetween(p.startDate, next.startDate) : Math.max(1, core.daysBetween(p.startDate, today) + 1);
+  const bleed = len ?? (open ? Math.max(1, core.daysBetween(p.startDate, today) + 1) : 0);
+  const until = next ? next.startDate : core.addDays(today, 1);
+  const notes = state.notes.filter((n) => n.date >= p.startDate && n.date < until).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const problem = core.findProblems(state, today).find((x) => x.id === id)?.code;
+  const badges = [
+    problem && problem !== "err.tooClose" && `<span class="badge warn">${t("list.problem")}</span>`,
+    cycle && cycle.autoExcluded && `<span class="badge${cycle.tooShort ? " warn" : ""}">${t(cycle.tooShort ? "list.tooClose" : "list.missed")}</span>`,
+    cycle && !cycle.counted && !cycle.autoExcluded && `<span class="badge">${t("list.notCounted")}</span>`,
+  ].filter(Boolean).join("");
+  const range = len ? t("list.range", { start: esc(fmtShort(p.startDate)), end: esc(fmtShort(p.endDate)) }) : t("list.started", { date: esc(fmtShort(p.startDate)) });
+  const meta = t("list.meta", {
+    p: len ? t("list.days", { n: len }) : open ? t("list.open") : t("stat.none"),
+    c: cycle ? t("list.days", { n: cycle.length }) : t("list.current", { n: span }),
+  });
+  const outside = cycle && cycle.counted && (cycle.length < TYPICAL[0] || cycle.length > TYPICAL[1]);
+  return { p, next, cycle, len, open, span, bleed, notes, problem, badges, range, meta, outside };
+}
+
+// A cycle's own sheet: its dates, a larger dot lane (period dots sized by the flow logged), every
+// log, and the button to edit the period.
+function cycleSheet() {
+  const today = core.todayIso();
+  const f = cycleFacts(sheet.id, today);
+  const FLOW_PX = { spotting: 6, light: 8, medium: 10, heavy: 12 };
+  const shown = Math.min(f.span, 60);
+  const dots = Array.from({ length: shown }, (_, d) => {
+    const iso = core.addDays(f.p.startDate, d);
+    const note = core.notesOn(state, iso)[0];
+    const size = d < f.bleed ? FLOW_PX[note?.flow] ?? 9 : note ? 6 : 4.5;
+    return `<i class="${d < f.bleed ? "p" : note ? "n" : ""}${!f.next && d === shown - 1 ? " now" : ""}" style="--s:${size}px"></i>`;
+  }).join("");
+  return `${sheetHead(f.range)}
+    <div class="sheet-body cycle-detail">
+      <p class="cycle-detail-meta">${f.meta}${f.badges ? ` <span class="lane-badges">${f.badges}</span>` : ""}</p>
+      ${f.problem ? `<p class="notice-text">${t(f.problem)}</p>` : ""}
+      <div class="cycle-detail-lane glass">
+        <span class="lane-dots big" style="--n:${shown}">${dots}</span>
+        <span class="cycle-detail-scale"><b>${t("cycles.day1")}</b><b>${f.cycle ? t("list.days", { n: f.cycle.length }) : t("list.current", { n: f.span })}</b></span>
+      </div>
+      ${f.notes.length ? `<section class="sheet-section"><h3>${t("list.logs", { n: f.notes.length })}</h3>
+        <ul class="note-list">${f.notes.map((n) => `<li><button type="button" data-action="open-day" data-date="${n.date}"${n.flow === "heavy" || (n.pain ?? 0) >= 4 ? ' class="marked"' : ""}><span class="note-date">${esc(fmtShort(n.date))}</span><span>${esc(noteSummary(n))}</span></button></li>`).join("")}</ul></section>` : ""}
+      <div class="sheet-actions"><button class="cap-button" type="button" data-action="edit-period" data-id="${esc(f.p.id)}">${t("sheet.editPeriod")}</button></div>
+    </div>`;
+}
+
+function openCycle(id) {
+  if (!sheet) sheetOpener = describeOpener(document.activeElement);
+  sheet = { type: "cycle", id };
+  renderSheet();
+  focusSheet();
+}
 
 // Cycles (Locked 11 Oct): Cycles_v01 version A's ring with the Today moon inside it, the numbers
 // under it, then one history where each cycle is a lane of dots from day 1 (version C's chart:
-// the faint band is the typical 21–35 days). Tapping a lane opens its dates, logs and edit button.
+// the faint band is the typical 21–35 days). Tapping a lane opens that cycle's sheet.
 function cycleRing(st, pred, today) {
   const last = core.latestPeriod(state);
   const stats = core.getStats(state);
@@ -689,19 +753,41 @@ function cycleRing(st, pred, today) {
   const bleed = last ? core.periodLength(last) ?? Math.max(1, core.daysBetween(last.startDate, today) + 1) : 0;
   const lo = pred.level !== "none" && last ? core.daysBetween(last.startDate, pred.earliest) + 1 : null;
   const hi = pred.level !== "none" && last ? core.daysBetween(last.startDate, pred.latest) + 1 : null;
+  // Dot size carries meaning: period days by the flow logged (heavier = bigger); other days swell
+  // toward mid-cycle like a waxing moon, logged days a size up, the future smaller and fainter;
+  // the likely window medium with a glow; today largest.
+  const FLOW_R = { spotting: 3.2, light: 4.2, medium: 5.2, heavy: 6.4 };
   const c = 150, R = 134;
   let dots = "";
   for (let d = 1; d <= N; d += 1) {
     const a = -Math.PI / 2 + ((d - 1) / N) * 2 * Math.PI;
     const x = (c + R * Math.cos(a)).toFixed(1), y = (c + R * Math.sin(a)).toFixed(1);
+    const iso = last ? core.addDays(last.startDate, d - 1) : null;
+    const note = iso && iso <= today ? core.notesOn(state, iso)[0] : null;
     const now = last && d === st.cycleDay;
-    const fill = last && d <= bleed ? "#ffa8c2" : lo && d >= lo && d <= hi ? "rgba(217,198,255,.8)" : now ? "#f6efff" : "rgba(255,255,255,.18)";
-    if (now) dots += `<circle cx="${x}" cy="${y}" r="15" fill="url(#ringGlow)"/><circle cx="${x}" cy="${y}" r="9.5" fill="none" stroke="#f6efff" stroke-width="1.2"/>`;
-    dots += `<circle cx="${x}" cy="${y}" r="${now ? 5 : 4}" fill="${fill}"/>`;
+    const period = last && d <= bleed;
+    const likely = lo && d >= lo && d <= hi && iso > today;
+    const future = iso && iso > today;
+    // ordinary days swell toward mid-cycle and back, like a moon waxing and waning
+    const swell = Math.sin((Math.PI * (d - 0.5)) / N);
+    let r = 2.3 + 1.7 * swell;
+    let fill = `rgba(255,255,255,${(0.16 + 0.14 * swell).toFixed(2)})`;
+    if (period) { r = FLOW_R[note?.flow] ?? 4.6; fill = "#ffa8c2"; }
+    else if (now) { r = 5.6; fill = "#f6efff"; }
+    else if (likely) { r = 4.2; fill = "rgba(217,198,255,.85)"; dots += `<circle cx="${x}" cy="${y}" r="9" fill="url(#likelyGlow)"/>`; }
+    else if (future) { r *= 0.75; fill = "rgba(255,255,255,.14)"; }
+    else if (note) { r += 1; fill = "rgba(246,239,255,.72)"; }
+    if (period && r >= 5) dots += `<circle cx="${x}" cy="${y}" r="${r + 5}" fill="url(#periodGlow)"/>`;
+    if (now) dots += `<circle cx="${x}" cy="${y}" r="16" fill="url(#ringGlow)"/><circle cx="${x}" cy="${y}" r="10" fill="none" stroke="#f6efff" stroke-width="1.2"/>`;
+    dots += `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}"/>`;
   }
   return `<div class="cycle-ring" aria-hidden="true">
       <div class="cycle-moon"></div>
-      <svg viewBox="0 0 300 300"><defs><radialGradient id="ringGlow"><stop offset="0" stop-color="#f6efff" stop-opacity=".35"/><stop offset="1" stop-color="#f6efff" stop-opacity="0"/></radialGradient></defs>${dots}</svg>
+      <svg viewBox="0 0 300 300"><defs>
+        <radialGradient id="ringGlow"><stop offset="0" stop-color="#f6efff" stop-opacity=".35"/><stop offset="1" stop-color="#f6efff" stop-opacity="0"/></radialGradient>
+        <radialGradient id="periodGlow"><stop offset="0" stop-color="#ffa8c2" stop-opacity=".45"/><stop offset="1" stop-color="#ffa8c2" stop-opacity="0"/></radialGradient>
+        <radialGradient id="likelyGlow"><stop offset="0" stop-color="#d9c6ff" stop-opacity=".3"/><stop offset="1" stop-color="#d9c6ff" stop-opacity="0"/></radialGradient>
+      </defs>${dots}</svg>
     </div>`;
 }
 
@@ -709,15 +795,11 @@ function renderCycles() {
   const today = core.todayIso();
   const st = core.getStatus(state, today);
   const pred = st.pred || core.predict(state);
-  const cycles = core.getCycles(state);
   const stats = core.getStats(state);
   const flags = core.healthFlags(state, today);
-  const problems = new Map(core.findProblems(state, today).map((p) => [p.id, p.code]));
   const asc = core.sortedPeriods(state);
-  const byFrom = new Map(cycles.map((c) => [c.from.id, c]));
   const symptoms = recentSymptoms(asc);
   const symLabel = (s) => (core.SYMPTOMS.includes(s) ? t(`sym.${s}`) : s);
-  const isLatest = (p) => asc[asc.length - 1]?.id === p.id;
   cyclesMoon = homeMoon(st, pred).tint;
 
   const spans = asc.map((p, idx) => (asc[idx + 1] ? core.daysBetween(p.startDate, asc[idx + 1].startDate) : Math.max(1, core.daysBetween(p.startDate, today) + 1)));
@@ -725,41 +807,16 @@ function renderCycles() {
   const pct = (n) => `${((n / MAXD) * 100).toFixed(2)}%`;
 
   const lanes = [...asc].reverse().map((p) => {
-    const idx = asc.indexOf(p);
-    const next = asc[idx + 1];
-    const cycle = byFrom.get(p.id);
-    const len = core.periodLength(p);
-    const open = !p.endDate && isLatest(p);
-    const span = spans[idx];
-    const bleed = len ?? (open ? Math.max(1, core.daysBetween(p.startDate, today) + 1) : 0);
-    const until = next ? next.startDate : core.addDays(today, 1);
-    const notes = state.notes.filter((n) => n.date >= p.startDate && n.date < until).sort((a, b) => (a.date < b.date ? -1 : 1));
-    const expanded = expandedRows.has(p.id);
-    const outside = cycle && cycle.counted && (cycle.length < TYPICAL[0] || cycle.length > TYPICAL[1]);
-    const badges = [
-      problems.has(p.id) && problems.get(p.id) !== "err.tooClose" && `<span class="badge warn">${t("list.problem")}</span>`,
-      cycle && cycle.autoExcluded && `<span class="badge${cycle.tooShort ? " warn" : ""}">${t(cycle.tooShort ? "list.tooClose" : "list.missed")}</span>`,
-      cycle && !cycle.counted && !cycle.autoExcluded && `<span class="badge">${t("list.notCounted")}</span>`,
-    ].filter(Boolean).join("");
-    const shown = Math.min(span, MAXD);
-    const dots = Array.from({ length: shown }, (_, d) => `<i class="${d < bleed ? "p" : ""}${!next && d === shown - 1 ? " now" : ""}"></i>`).join("");
-    const range = len ? t("list.range", { start: esc(fmtShort(p.startDate)), end: esc(fmtShort(p.endDate)) }) : t("list.started", { date: esc(fmtShort(p.startDate)) });
-    const meta = t("list.meta", {
-      p: len ? t("list.days", { n: len }) : open ? t("list.open") : t("stat.none"),
-      c: cycle ? t("list.days", { n: cycle.length }) : t("list.current", { n: span }),
-    });
-    return `<li class="lane-item${expanded ? " open" : ""}">
-        <button class="lane" type="button" data-action="toggle-row" data-id="${esc(p.id)}" aria-expanded="${expanded}" aria-label="${esc(`${fmtLong(p.startDate)} · ${meta}`)}">
+    const f = cycleFacts(p.id, today);
+    const shown = Math.min(f.span, MAXD);
+    const dots = Array.from({ length: shown }, (_, d) => `<i class="${d < f.bleed ? "p" : ""}${!f.next && d === shown - 1 ? " now" : ""}"></i>`).join("");
+    return `<li class="lane-item">
+        <button class="lane" type="button" data-action="open-cycle" data-id="${esc(p.id)}" aria-label="${esc(`${fmtLong(p.startDate)} · ${f.meta}`)}">
           <span class="lane-date">${esc(fmtShort(p.startDate))}</span>
           <span class="lane-dots" style="--n:${MAXD}">${dots}</span>
-          <span class="lane-len${outside ? " warm" : ""}${cycle && !cycle.counted ? " out" : ""}${cycle ? "" : " now"}">${cycle ? cycle.length : span}</span>
+          <span class="lane-len${f.outside ? " warm" : ""}${f.cycle && !f.cycle.counted ? " out" : ""}${f.cycle ? "" : " now"}">${f.cycle ? f.cycle.length : f.span}</span>
         </button>
-        ${badges ? `<span class="lane-badges">${badges}</span>` : ""}
-        ${expanded ? `<div class="lane-more">
-            <p class="lane-meta"><strong>${range}</strong>${meta}</p>
-            ${notes.length ? `<ul class="note-list">${notes.map((n) => `<li><button type="button" data-action="open-day" data-date="${n.date}"${n.flow === "heavy" || (n.pain ?? 0) >= 4 ? ' class="marked"' : ""}><span class="note-date">${esc(fmtShort(n.date))}</span><span>${esc(noteSummary(n))}</span></button></li>`).join("")}</ul>` : ""}
-            <button class="cap-button" type="button" data-action="edit-period" data-id="${esc(p.id)}">${t("sheet.editPeriod")}</button>
-          </div>` : ""}
+        ${f.badges ? `<span class="lane-badges">${f.badges}</span>` : ""}
       </li>`;
   }).join("");
 
@@ -1113,15 +1170,7 @@ const actions = {
   },
 
   "edit-period": (el) => openPeriodEditor(el.dataset.id),
-  "toggle-row": (el) => {
-    const id = el.dataset.id;
-    if (expandedRows.has(id)) expandedRows.delete(id);
-    else expandedRows.add(id);
-    const top = app.scrollTop;
-    render();
-    app.scrollTop = top;
-    app.querySelector(`[data-action="toggle-row"][data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
-  },
+  "open-cycle": (el) => openCycle(el.dataset.id),
   "add-period": () => openPeriodEditor(null),
   "set-mode": (el) => {
     sheet.mode = el.dataset.value;

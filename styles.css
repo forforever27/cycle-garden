@@ -493,14 +493,26 @@ textarea::placeholder, input::placeholder { color: rgba(255, 248, 255, 0.62); }
 .lane-len.warm { color: var(--peach); }
 .lane-len.out { color: rgba(251, 246, 255, 0.45); }
 .lane-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 6px 60px; }
-.lane-item.open { position: relative; z-index: 1; margin: 4px -6px; padding: 0 6px 12px; border-radius: 20px; background: #1c2350; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 10px 26px rgba(4, 2, 14, 0.35); }
 .lane-len.now { color: var(--pearl); opacity: 0.7; }
-.lane-more { display: grid; gap: 10px; justify-items: start; padding: 4px 0 0 60px; }
-.lane-meta { color: var(--soft); font-size: 13px; line-height: 1.5; }
-.lane-meta strong { display: block; color: var(--ink); font: 400 16px/1.4 var(--serif-cjk); }
-.lane-more .note-list { width: 100%; border-top: 0; }
-.lane-more .note-list button { padding: 8px 0; }
 .lanes .chart-legend { margin-top: 12px; padding-left: 60px; }
+.lane:hover .lane-dots i::before, .lane:focus-visible .lane-dots i::before { transform: scale(1.2); }
+.lane-dots i::before { transition: transform 200ms; }
+
+/* a cycle's sheet */
+.cycle-detail { gap: 16px; }
+.cycle-detail-meta { color: var(--soft); font-size: 14px; line-height: 1.6; }
+.cycle-detail-meta .lane-badges { display: inline-flex; margin: 0 0 0 6px; vertical-align: 1px; }
+.cycle-detail-lane { display: grid; gap: 12px; padding: 22px 18px 16px; border-radius: 28px; }
+/* in the sheet the cycle's days sit in rows of 15, so the flow sizes have room to show */
+.lane-dots.big { display: grid; grid-template-columns: repeat(15, 1fr); row-gap: 12px; }
+.lane-dots.big i { display: grid; height: 16px; place-items: center; }
+.lane-dots.big i::before { width: var(--s); height: var(--s); margin: 0; }
+.lane-dots i.n::before { background: rgba(246, 239, 255, 0.55); }
+.cycle-detail-scale { display: flex; justify-content: space-between; color: rgba(251, 246, 255, 0.6); font-size: 11px; }
+.cycle-detail-scale b { font-weight: 400; }
+.cycle-detail .note-list { border-top: 0; }
+.cycle-detail .note-list button { padding: 10px 0; }
+.cycle-detail .sheet-actions { justify-items: start; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; color: rgba(251, 246, 255, 0.6); font-size: 11px; }
 .chart-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 999px; }

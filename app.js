@@ -477,7 +477,7 @@ function renderSheet(focusSelector) {
     chips.scrollLeft += b.left - a.left - (a.width - b.width) / 2;
   }
   if (focusSelector) sheetRoot.querySelector(focusSelector)?.focus({ preventScroll: true });
-  if (sheet.confirm) next.querySelector(".danger-button")?.scrollIntoView({ block: "nearest" });
+  if (sheet.confirm) next.querySelector(".danger-button, [data-action='delete-day']")?.scrollIntoView({ block: "nearest" });
 }
 
 function sheetHead(title) {
@@ -490,60 +490,125 @@ function sheetHead(title) {
 
 const pressed = (on) => `aria-pressed="${on ? "true" : "false"}"`;
 
+// Log sheet (Locked 11 Oct, version C of LogSheet_v02): moon week strip, then one glass card per
+// field, all open; the value of each field shows at the card's top right; one glowing Save.
+const SYM_ICON = {
+  cramps: '<path d="M4 13c2-3 4 3 6 0s4 3 6 0 4 3 4 0"/><path d="M8 7c1.5 1 6.5 1 8 0"/>',
+  tired: '<rect x="3" y="8" width="16" height="9" rx="3"/><path d="M21 11v3M6 11v3"/>',
+  mood: '<path d="M4 12c2.5-4 5.5 4 8 0s5.5 4 8 0"/>',
+  sleep: '<path d="M15 4.5a7.5 7.5 0 1 0 4.5 12.5A6.5 6.5 0 0 1 15 4.5z"/>',
+  headache: '<circle cx="12" cy="13" r="6"/><path d="M12 3v2M5 6l1.5 1.5M19 6l-1.5 1.5"/>',
+  bloating: '<ellipse cx="12" cy="13" rx="8" ry="6"/><path d="M9 13h6"/>',
+};
+const symIcon = (key) => (SYM_ICON[key] ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SYM_ICON[key]}</svg>` : "");
+
+// A drop filled to the flow amount (spotting is a single dot).
+function flowDrop(level) {
+  const id = `drop-${level}`;
+  const shape = "M12 3c3.5 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2.5-6 6-11z";
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><defs><clipPath id="${id}"><path d="${shape}"/></clipPath></defs>
+    <path d="${shape}" fill="none" stroke="#ffc2d4" stroke-width="1.5"/>
+    <rect x="0" y="${[20, 15, 11, 3][level]}" width="24" height="24" fill="#ffa8c2" clip-path="url(#${id})"/>${level === 0 ? '<circle cx="12" cy="16" r="2" fill="#ffa8c2"/>' : ""}</svg>`;
+}
+
+// Day of the cycle a date falls on (from the latest period that started on or before it).
+function cycleDayOn(iso) {
+  const start = state.periods.filter((p) => p.startDate <= iso).reduce((a, p) => (!a || p.startDate > a.startDate ? p : a), null);
+  return start ? core.daysBetween(start.startDate, iso) + 1 : null;
+}
+
+function moonPath(cx, cy, r, t) {
+  const k = Math.cos(2 * Math.PI * t), waxing = t < 0.5, rx = Math.abs(k) * r;
+  return `M${cx},${cy - r} A${r},${r} 0 0 ${waxing ? 1 : 0} ${cx},${cy + r} A${rx.toFixed(2)},${r} 0 0 ${waxing ? (k > 0 ? 0 : 1) : (k > 0 ? 1 : 0)} ${cx},${cy - r}Z`;
+}
+
+// The last 7 days as moon phases (period = full moon, rose; likely days lilac), oldest first.
+function moonWeek(selected, today) {
+  const pred = core.predict(state);
+  const days = Array.from({ length: 7 }, (_, i) => core.addDays(today, i - 6));
+  const earlier = !days.includes(selected);
+  const cell = (iso) => {
+    const info = core.dayInfo(state, iso, today, pred);
+    const cd = cycleDayOn(iso);
+    const on = iso === selected;
+    const r = on ? 10 : 8.5;
+    const fill = info.period ? "#ffa8c2" : info.predicted ? "#d9c6ff" : "rgba(246,239,255,.85)";
+    const lit = cd ? `<path d="${moonPath(15, 15, r, (((cd - 1) / 30) + 0.5) % 1)}" fill="${fill}"/>` : "";
+    const label = iso === today ? t("sheet.today") : fmtWeekday(iso);
+    return `<button class="moon-day${on ? " on" : ""}${info.hasNote ? " noted" : ""}" type="button" data-action="sheet-date" data-value="${iso}" ${pressed(on)} aria-label="${esc(fmtDay(iso))}">
+        <svg viewBox="0 0 30 30" aria-hidden="true">${on ? '<circle cx="15" cy="15" r="14" fill="none" stroke="#f6efff" stroke-width="1.2"/>' : ""}<circle cx="15" cy="15" r="${r}" fill="rgba(255,255,255,.1)"/>${lit}</svg>
+        <b>${dayNum(iso)}</b><span>${esc(label)}</span></button>`;
+  };
+  return `<div class="moon-week" role="group" aria-label="${t("sheet.dateGroup")}">
+      <span class="moon-day earlier${earlier ? " on" : ""}">
+        <svg viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="15" r="10" fill="none" stroke="rgba(255,255,255,.3)" stroke-dasharray="2 3"/><path d="M12 15h6M15 12v6" stroke="rgba(255,255,255,.7)" stroke-linecap="round"/></svg>
+        <b>${earlier ? dayNum(selected) : "&nbsp;"}</b><span>${earlier ? esc(fmtShort(selected)) : t("sheet.earlierShort")}</span>
+        <input type="date" id="sheetDate" max="${today}" value="${selected}" aria-label="${t("sheet.earlier")}">
+      </span>
+      ${days.map(cell).join("")}
+    </div>`;
+}
+
+function painWord(n) {
+  return n === null ? "—" : `<i>${n}</i>${t(`pain.w${n}`)}`;
+}
+
 function daySheet() {
   const today = core.todayIso();
   const d = sheet.date;
-  const recent = Array.from({ length: 7 }, (_, i) => core.addDays(today, -i));
   const period = core.periodOn(state, d, today);
-  const dateLabel = (iso, i) => (i === 0 ? t("sheet.today") : i === 1 ? t("sheet.yesterday") : `${fmtWeekday(iso)} ${dayNum(iso)}`);
+  const cd = cycleDayOn(d);
+  const sub = period ? t("sheet.inPeriod", { n: core.daysBetween(period.startDate, d) + 1 }) : cd ? t("status.cycleDay", { n: cd }) : "";
 
   let periodHtml;
   if (period) {
-    const n = core.daysBetween(period.startDate, d) + 1;
-    periodHtml = `<p class="sheet-status period-on">${t("sheet.inPeriod", { n })}</p>
-      <div class="button-row">
-        ${!period.endDate ? `<button class="soft-button" type="button" data-action="end-at">${t("sheet.endHere")}</button>` : ""}
-        <button class="plain-button" type="button" data-action="edit-period" data-id="${esc(period.id)}">${t("sheet.editPeriod")}</button>
-      </div>`;
+    periodHtml = `<svg class="period-mark" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="12" fill="#ffa8c2"/><circle cx="17" cy="17" r="16" fill="none" stroke="rgba(255,168,194,.35)"/></svg>
+      <p><strong>${t("sheet.inPeriod", { n: core.daysBetween(period.startDate, d) + 1 })}</strong>
+        <button class="link-button" type="button" data-action="edit-period" data-id="${esc(period.id)}">${t("sheet.editPeriod")}</button></p>
+      ${!period.endDate ? `<button class="cap-button" type="button" data-action="end-at">${t("sheet.endHere")}</button>` : ""}`;
   } else {
-    periodHtml = `<p class="sheet-status">${t("sheet.noPeriod")}</p>
-      <div class="button-row"><button class="soft-button accent" type="button" data-action="start-at">${t("sheet.startHere")}</button></div>`;
+    periodHtml = `<svg class="period-mark" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="12" fill="none" stroke="rgba(255,168,194,.7)" stroke-dasharray="2 3.2"/></svg>
+      <p><strong>${t("sheet.noPeriodShort")}</strong></p>
+      <button class="cap-button" type="button" data-action="start-at">${t("sheet.startHere")}</button>`;
   }
-  if (sheet.periodError) periodHtml += `<p class="form-error" role="alert">${sheet.periodError}</p>`;
 
-  return `${sheetHead(esc(fmtDay(d)))}
-    <div class="sheet-body">
-      <div class="date-chips" role="group" aria-label="${t("sheet.dateGroup")}">
-        ${recent.map((iso, i) => `<button class="chip" type="button" data-action="sheet-date" data-value="${iso}" ${pressed(iso === d)}>${esc(dateLabel(iso, i))}</button>`).join("")}
-        <span class="chip date-shell date-chip${recent.includes(d) ? "" : " is-pressed"}">
-          <span class="date-text" aria-hidden="true">${recent.includes(d) ? t("sheet.earlier") : esc(fmtShort(d))}</span>
-          <input type="date" id="sheetDate" max="${today}" value="${d}" aria-label="${t("sheet.earlier")}">
-        </span>
+  const p = sheet.pain;
+  return `<div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-head day-head">
+      <div>
+        <h2 id="sheetTitle" tabindex="-1">${esc(fmtShort(d))}<span>${d === today ? t("sheet.today") : esc(fmtWeekday(d))}</span></h2>
+        ${sub ? `<p class="day-sub${period ? " is-period" : ""}">${sub}</p>` : ""}
       </div>
+      <button class="icon-btn" type="button" data-action="close-sheet" aria-label="${t("sheet.close")}">${ICON_CLOSE}</button>
+    </div>
+    <div class="sheet-body log-body">
+      ${moonWeek(d, today)}
 
-      <section class="sheet-section" aria-labelledby="secPeriod">
-        <h3 id="secPeriod" tabindex="-1">${t("sheet.period")}</h3>
+      <section class="log-card glass period-card" aria-labelledby="secPeriod">
+        <h3 id="secPeriod" class="visually-hidden" tabindex="-1">${t("sheet.period")}</h3>
         ${periodHtml}
+        ${sheet.periodError ? `<p class="form-error" role="alert">${sheet.periodError}</p>` : ""}
       </section>
 
-      <section class="sheet-section" aria-labelledby="secFlow">
-        <h3 id="secFlow">${t("sheet.flow")}</h3>
-        <div class="chips flow-chips" role="group" aria-labelledby="secFlow">
-          ${core.FLOWS.map((f) => `<button class="chip" type="button" data-action="set-flow" data-value="${f}" ${pressed(sheet.flow === f)}>${t(`flow.${f}`)}</button>`).join("")}
+      <section class="log-card glass" aria-labelledby="secFlow">
+        <div class="log-top"><h3 id="secFlow">${t("sheet.flow")}</h3><strong>${sheet.flow ? t(`flow.${sheet.flow}`) : "—"}</strong></div>
+        <div class="flow-tiles" role="group" aria-labelledby="secFlow">
+          ${core.FLOWS.map((f, i) => `<button class="flow-tile" type="button" data-action="set-flow" data-value="${f}" ${pressed(sheet.flow === f)}><i>${flowDrop(i)}</i>${t(`flow.${f}`)}</button>`).join("")}
         </div>
       </section>
 
-      <section class="sheet-section" aria-labelledby="secPain">
-        <h3 id="secPain">${t("sheet.pain")} <small>${t("pain.hint")}</small></h3>
-        <div class="segmented" role="group" aria-labelledby="secPain">
-          ${[0, 1, 2, 3, 4, 5].map((n) => `<button type="button" data-action="set-pain" data-value="${n}" ${pressed(sheet.pain === n)}>${n === 0 ? t("pain.0") : n}</button>`).join("")}
+      <section class="log-card glass" aria-labelledby="secPain">
+        <div class="log-top"><h3 id="secPain">${t("sheet.pain")}</h3><strong id="painWord">${painWord(p)}</strong></div>
+        <input type="range" id="painRange" class="pain-range${p === null ? " unset" : ""}" min="0" max="5" step="1" value="${p ?? 0}" style="--p:${((p ?? 0) / 5) * 100}%" aria-labelledby="secPain" aria-valuetext="${p === null ? "—" : `${p} ${t(`pain.w${p}`)}`}">
+        <div class="pain-ticks" role="group" aria-label="${t("pain.hint")}">
+          ${[0, 1, 2, 3, 4, 5].map((n) => `<button type="button" data-action="set-pain" data-value="${n}" ${pressed(p === n)} aria-label="${n} ${t(`pain.w${n}`)}">${n}</button>`).join("")}
         </div>
       </section>
 
-      <section class="sheet-section" aria-labelledby="secSym">
-        <h3 id="secSym">${t("sheet.symptoms")}</h3>
+      <section class="log-card glass" aria-labelledby="secSym">
+        <div class="log-top"><h3 id="secSym">${t("sheet.symptoms")}</h3><strong>${sheet.symptoms.size ? t("sheet.symCount", { n: sheet.symptoms.size }) : "—"}</strong></div>
         <div class="chips" role="group" aria-labelledby="secSym">
-          ${core.SYMPTOMS.map((s) => `<button class="chip" type="button" data-action="toggle-sym" data-value="${s}" ${pressed(sheet.symptoms.has(s))}>${t(`sym.${s}`)}</button>`).join("")}
+          ${core.SYMPTOMS.map((s) => `<button class="chip" type="button" data-action="toggle-sym" data-value="${s}" ${pressed(sheet.symptoms.has(s))}>${symIcon(s)}${t(`sym.${s}`)}</button>`).join("")}
           ${customSymptoms().map((s) => `<button class="chip" type="button" data-action="toggle-sym" data-value="${esc(s)}" ${pressed(sheet.symptoms.has(s))}>${esc(s)}</button>`).join("")}
         </div>
         <div class="add-row">
@@ -552,17 +617,17 @@ function daySheet() {
         </div>
       </section>
 
-      <section class="sheet-section">
-        <label class="field" for="sheetNote"><span>${t("sheet.note")}</span>
-          <textarea id="sheetNote" rows="3" placeholder="${t("sheet.notePlaceholder")}">${esc(sheet.note)}</textarea>
+      <section class="log-card glass">
+        <label class="log-note" for="sheetNote"><span class="log-top"><h3>${t("sheet.note")}</h3></span>
+          <textarea id="sheetNote" rows="2" placeholder="${t("sheet.notePlaceholder")}">${esc(sheet.note)}</textarea>
         </label>
       </section>
 
       ${sheet.error ? `<p class="form-error" role="alert">${sheet.error}</p>` : ""}
-      <div class="sheet-actions">
-        <button class="primary-action compact" type="button" data-action="save-day"><strong>${t("sheet.save")}</strong></button>
-        ${sheet.noteId ? `<button class="danger-button" type="button" data-action="delete-day">${sheet.confirm ? t("sheet.confirmDelete") : t("sheet.deleteLog")}</button>` : ""}
-      </div>
+    </div>
+    <div class="log-foot">
+      <button class="save-glow" type="button" data-action="save-day">${t("sheet.save")}</button>
+      ${sheet.noteId ? `<button class="link-button" type="button" data-action="delete-day">${sheet.confirm ? t("sheet.confirmDelete") : t("sheet.deleteLog")}</button>` : ""}
     </div>`;
 }
 
@@ -1145,13 +1210,22 @@ sheetRoot.addEventListener("change", (event) => {
 
 // Open the native picker on click (desktop browsers otherwise only focus the hidden segments).
 sheetRoot.addEventListener("click", (event) => {
-  const input = event.target.closest(".date-shell input[type=date]");
+  const input = event.target.closest(".date-shell input[type=date], .moon-day.earlier input[type=date]");
   if (input && !input.disabled) {
     try { input.showPicker?.(); } catch { /* not allowed here: the input still works by keyboard */ }
   }
 });
 
 sheetRoot.addEventListener("input", (event) => {
+  if (sheet?.type === "day" && event.target.id === "painRange") {
+    const n = Number(event.target.value);
+    sheet.pain = n;
+    event.target.classList.remove("unset");
+    event.target.style.setProperty("--p", `${(n / 5) * 100}%`);
+    event.target.setAttribute("aria-valuetext", `${n} ${t(`pain.w${n}`)}`);
+    sheetRoot.querySelector("#painWord").innerHTML = painWord(n);
+    sheetRoot.querySelectorAll("[data-action='set-pain']").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.value) === n)));
+  }
   if (sheet?.type === "day" && event.target.id === "sheetNote") sheet.note = event.target.value;
   if (sheet?.type === "day" && event.target.id === "customSym") sheet.custom = event.target.value;
   if (sheet) sheet.closeArmed = false;

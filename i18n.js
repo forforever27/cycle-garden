@@ -29,6 +29,8 @@ const STRINGS = {
     "problems.banner": "{n} 条记录的日期需要修正", "problems.open": "去修正",
 
     "phase.learning": "认识你", "phase.waiting": "平静期", "phase.prep": "准备期", "phase.window": "快来了", "phase.late": "晚了一些", "phase.period": "经期",
+    "sheet.earlierShort": "更早", "sheet.noPeriodShort": "不在经期", "sheet.symCount": "{n} 项",
+    "pain.w0": "无", "pain.w1": "很轻", "pain.w2": "轻", "pain.w3": "中等", "pain.w4": "明显", "pain.w5": "很痛",
     "big.day": "第{n}天", "info.open": "看看依据", "info.title": "依据与准备", "info.next": "下次可能", "prep.link": "准备清单 {d}/{n}",
     "week.label": "这一周", "recent.title": "最近记录", "summary.flow": "流量：{v}", "summary.pain": "疼痛：{n}/5",
     "prep.title": "准备清单", "prep.pads": "卫生巾", "prep.liners": "护垫", "prep.relief": "止痛药", "prep.done": "都准备好了",
@@ -136,6 +138,8 @@ const STRINGS = {
     "problems.banner": "Dates to fix: {n}", "problems.open": "Fix",
 
     "phase.learning": "Getting to know you", "phase.waiting": "Calm days", "phase.prep": "Getting ready", "phase.window": "Any day now", "phase.late": "A little late", "phase.period": "Period",
+    "sheet.earlierShort": "Earlier", "sheet.noPeriodShort": "Not a period day", "sheet.symCount": "{n} selected",
+    "pain.w0": "None", "pain.w1": "Very mild", "pain.w2": "Mild", "pain.w3": "Moderate", "pain.w4": "Strong", "pain.w5": "Severe",
     "big.day": "Day {n}", "info.open": "See why", "info.title": "Details and prep", "info.next": "Next period, likely", "prep.link": "Prep kit {d}/{n}",
     "week.label": "This week", "recent.title": "Recent logs", "summary.flow": "Flow: {v}", "summary.pain": "Pain: {n}/5",
     "prep.title": "Prep kit", "prep.pads": "Pads", "prep.liners": "Liners", "prep.relief": "Pain relief", "prep.done": "All packed",

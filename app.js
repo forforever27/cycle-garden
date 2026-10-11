@@ -102,7 +102,8 @@ function render() {
   app.innerHTML = views[view]();
   renderNav();
   placeMoon();
-  if (view === "cycles") moonrise.mini(app.querySelector(".cycle-moon"), cyclesMoon);
+  if (view === "cycles") moonrise.mini(app.querySelector(".cycle-moon"), miniTint);
+  if (view === "settings") moonrise.mini(app.querySelector(".set-moon"), miniTint);
   renderSheet();
 }
 
@@ -464,7 +465,7 @@ function renderSheet(focusSelector) {
   const scroll = prev && prev.dataset.type === sheet.type ? prev.scrollTop : 0;
   sheetRoot.innerHTML = `<div class="sheet-backdrop" data-action="close-sheet"></div>
     <section class="sheet${prev ? " no-anim" : ""}" data-type="${sheet.type}" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-      ${{ day: daySheet, info: infoSheet, cycle: cycleSheet }[sheet.type]?.() ?? periodSheet()}
+      ${{ day: daySheet, info: infoSheet, cycle: cycleSheet, setting: settingSheet }[sheet.type]?.() ?? periodSheet()}
     </section>`;
   const next = sheetRoot.querySelector(".sheet");
   next.scrollTop = scroll;
@@ -679,7 +680,7 @@ function recentSymptoms(asc) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 }
 
-let cyclesMoon = "cream";
+let miniTint = "cream";
 
 function cycleFacts(id, today = core.todayIso()) {
   const asc = core.sortedPeriods(state);
@@ -800,7 +801,7 @@ function renderCycles() {
   const asc = core.sortedPeriods(state);
   const symptoms = recentSymptoms(asc);
   const symLabel = (s) => (core.SYMPTOMS.includes(s) ? t(`sym.${s}`) : s);
-  cyclesMoon = homeMoon(st, pred).tint;
+  miniTint = homeMoon(st, pred).tint;
 
   const spans = asc.map((p, idx) => (asc[idx + 1] ? core.daysBetween(p.startDate, asc[idx + 1].startDate) : Math.max(1, core.daysBetween(p.startDate, today) + 1)));
   const MAXD = Math.min(60, Math.max(45, ...spans.map((n) => n + 1)));
@@ -947,83 +948,190 @@ function renderCalendar() {
 
 // ---------- settings ----------
 
+// Settings (Locked 11 Oct, version B of Settings_v01): a small living moon and one line up top,
+// status chips, then labelled groups of rows. Every row opens its own sheet; nothing is edited inline.
+const SET_ICON = {
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5h4"/>',
+  cal: '<rect x="4" y="5.5" width="16" height="14.5" rx="4"/><path d="M4 10h16M8.5 3.5v3M15.5 3.5v3"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="10" rx="3.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
+  cloud: '<path d="M7 18.5h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7 9.5a4.5 4.5 0 0 0 0 9z"/>',
+  doc: '<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4M10 12.5h5M10 16h5"/>',
+  box: '<path d="M4.5 8.5 12 4l7.5 4.5v8L12 21l-7.5-4.5z"/><path d="M4.5 8.5 12 13l7.5-4.5M12 13v8"/>',
+  lang: '<path d="M4 6h9M8.5 4v2M6 6c.6 3 2.6 5.4 5.5 6.5M11 6c-.8 3.2-3 5.8-6.5 7"/><path d="M12 20l4-9 4 9M13.4 17h5.2"/>',
+};
+const setIcon = (k) => `<span class="set-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${SET_ICON[k]}</svg></span>`;
+const syncState = () => (cloud.ready && cloud.user ? "in" : cloud.ready ? "out" : "local");
+const langName = () => (getLang() === "zh" ? "中文" : "English");
+const CAL_NAMES = ["Personal prep", "Personal window", "Body check-in", "Restock essentials"];
+
 function renderSettings() {
-  const pred = core.predict(state);
-  let syncText = t("sync.local");
-  let syncButton = `<button class="soft-button" type="button" disabled>${t("sync.notSet")}</button>`;
-  if (cloud.ready && cloud.user) {
-    syncText = t("sync.signedIn", { email: esc(cloud.user.email || "") });
-    syncButton = `<button class="plain-button" type="button" data-action="cloud-auth">${t("sync.signOut")}</button>`;
-  } else if (cloud.ready) {
-    syncText = t("sync.signedOut");
-    syncButton = `<button class="soft-button accent" type="button" data-action="cloud-auth">${t("sync.signIn")}</button>`;
-  }
+  const st = core.getStatus(state, core.todayIso());
+  miniTint = homeMoon(st, st.pred || core.predict(state)).tint;
+  const sync = syncState();
+  const lockOn = pinLock.isEnabled();
+  const row = (id, icon, title, sub, end = ICON_CHEVRON) => `<button class="set-row" type="button" data-action="open-setting" data-value="${id}" aria-haspopup="dialog">
+      ${setIcon(icon)}<span class="set-text">${title}${sub ? `<small>${sub}</small>` : ""}</span>${end}</button>`;
   return `
-    <header class="page-header">
-      <h1 tabindex="-1">${t("settings.title")}</h1>
+    <header class="set-hero">
+      <div class="set-moon" aria-hidden="true"></div>
+      <h1 class="set-kicker" tabindex="-1">${t("settings.title")}</h1>
+      <p class="set-line">${t("set.hero")}</p>
+      <p class="set-chips">
+        <span class="set-chip">${lockOn ? '<i class="set-on" aria-hidden="true"></i>' : ""}${t(lockOn ? "set.chipLockOn" : "set.chipLockOff")}</span>
+        <span class="set-chip">${sync === "in" ? '<i class="set-on" aria-hidden="true"></i>' : ""}${t({ in: "set.chipSynced", out: "set.chipSignedOut", local: "set.chipLocal" }[sync])}</span>
+        <span class="set-chip" lang="${getLang() === "zh" ? "zh-Hans" : "en"}">${langName()}</span>
+      </p>
     </header>
 
-    <section class="form-card glass" aria-labelledby="setLang">
-      <h2 id="setLang">${t("settings.language")}</h2>
-      <div class="segmented" role="group" aria-labelledby="setLang">
+    <h2 class="set-label">${t("settings.reminders")}</h2>
+    <div class="set-group glass">
+      ${row("remind", "bell", t("set.remind"), t("set.remindSub", { n: state.settings.prepDays, time: esc(state.settings.reminderTime) }))}
+      ${row("calendar", "cal", t("set.calendar"), t("set.calendarSub"))}
+    </div>
+
+    <h2 class="set-label">${t("set.groupPrivacy")}</h2>
+    <div class="set-group glass">
+      ${row("lock", "lock", t("settings.lock"), t(lockOn ? "set.lockSubOn" : "set.lockSubOff"), `<span class="set-toggle${lockOn ? " on" : ""}" aria-hidden="true"></span>`)}
+      ${row("sync", "cloud", t("settings.sync"), t({ in: "set.syncSubIn", out: "set.syncSubOut", local: "set.syncSubLocal" }[sync]))}
+    </div>
+
+    <h2 class="set-label">${t("set.groupData")}</h2>
+    <div class="set-group glass">
+      ${row("doctor", "doc", t("settings.share"), t("set.doctorSub"))}
+      ${row("backup", "box", t("set.backup"), t("set.backupSub"))}
+      ${row("lang", "lang", t("settings.language"), "", `<span class="set-value">${langName()}</span>${ICON_CHEVRON}`)}
+    </div>
+
+    <p class="set-foot"><b>Cycle Garden</b>${t(sync === "in" ? "set.footCloud" : "set.footLocal")}</p>`;
+}
+
+function openSetting(id) {
+  if (!sheet) sheetOpener = describeOpener(document.activeElement);
+  sheet = { type: "setting", id };
+  if (id === "remind") Object.assign(sheet, { prepDays: state.settings.prepDays, time: state.settings.reminderTime });
+  if (id === "lock") Object.assign(sheet, { mode: pinLock.isEnabled() ? "off" : "new", pin: "", first: "", error: "" });
+  renderSheet();
+  focusSheet();
+}
+
+function settingSheet() {
+  const s = sheet;
+  const pred = core.predict(state);
+  if (s.id === "remind") {
+    return `${sheetHead(t("set.remind"))}
+      <div class="sheet-body set-sheet">
+        <p class="help">${t("set.remindHelp")}</p>
+        <div class="set-line-row"><span id="prepLabel">${t("settings.prepDays")}</span>
+          <div class="stepper" role="group" aria-labelledby="prepLabel">
+            <button class="step-btn" type="button" data-action="prep-step" data-value="-1" aria-label="${t("set.less")}" ${s.prepDays <= 1 ? "disabled" : ""}>−</button>
+            <output id="prepDays" aria-live="polite"><b>${s.prepDays}</b>${t("set.daysUnit")}</output>
+            <button class="step-btn" type="button" data-action="prep-step" data-value="1" aria-label="${t("set.more")}" ${s.prepDays >= 14 ? "disabled" : ""}>+</button>
+          </div></div>
+        <label class="set-line-row" for="reminderTime"><span>${t("settings.reminderTime")}</span>
+          <input class="time-pill" type="time" id="reminderTime" value="${esc(s.time)}"></label>
+        <div class="sheet-actions"><button class="soft-button accent" type="button" data-action="save-settings">${t("settings.save")}</button></div>
+      </div>`;
+  }
+  if (s.id === "calendar") {
+    return `${sheetHead(t("set.calendar"))}
+      <div class="sheet-body set-sheet">
+        <p class="body-copy">${t("set.calHint")}</p>
+        <p class="cal-names">${CAL_NAMES.map((n) => `<span lang="en">${n}</span>`).join("")}</p>
+        <p class="help">${pred.level === "none" ? t("settings.calendarNone") : t("set.calAgain")}</p>
+        <div class="sheet-actions"><button class="soft-button accent" type="button" data-action="calendar-ics" ${pred.level === "none" ? "disabled" : ""}>${t("settings.calendarButton")}</button></div>
+      </div>`;
+  }
+  if (s.id === "lock") {
+    const title = t({ new: "set.pinNew", confirm: "set.pinAgain", off: "set.offTitle" }[s.mode]);
+    const slots = s.mode === "off" ? pinLock.pinLength() : s.mode === "confirm" ? s.first.length : Math.max(4, s.pin.length);
+    const key = (k, label = k, extra = "") => `<button type="button" data-action="pin-key" data-value="${k}" ${extra}>${label}</button>`;
+    return `${sheetHead(title)}
+      <div class="sheet-body set-sheet pin-sheet">
+        <p class="help">${t(s.mode === "off" ? "set.offHint" : "set.pinHint")}</p>
+        <div class="lock-dots" aria-hidden="true">${Array.from({ length: slots }, (_, i) => `<i class="${i < s.pin.length ? "on" : ""}"></i>`).join("")}</div>
+        <p class="pin-status" role="status" aria-live="polite">${s.error ? `<span class="err">${esc(s.error)}</span>` : s.pin.length ? t("set.pinCount", { n: s.pin.length }) : ""}</p>
+        <div class="lock-pad">
+          ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => key(n)).join("")}
+          ${s.mode === "new" ? key("done", t("set.pinDone"), `class="pad-word" ${s.pin.length < 4 ? "disabled" : ""}`) : "<span></span>"}
+          ${key(0)}
+          ${key("del", t("set.pinDelete"), `class="pad-word" ${s.pin.length ? "" : "disabled"}`)}
+        </div>
+      </div>`;
+  }
+  if (s.id === "sync") {
+    const sync = syncState();
+    const text = sync === "in" ? t("sync.signedIn", { email: esc(cloud.user.email || "") }) : sync === "out" ? t("sync.signedOut") : t("sync.local");
+    const button = sync === "in" ? `<button class="plain-button" type="button" data-action="cloud-auth">${t("sync.signOut")}</button>`
+      : sync === "out" ? `<button class="soft-button accent" type="button" data-action="cloud-auth">${t("sync.signIn")}</button>`
+      : `<button class="soft-button" type="button" disabled>${t("sync.notSet")}</button>`;
+    return `${sheetHead(t("settings.sync"))}
+      <div class="sheet-body set-sheet"><p class="body-copy">${text}</p><div class="sheet-actions">${button}</div></div>`;
+  }
+  if (s.id === "doctor") {
+    return `${sheetHead(t("settings.share"))}
+      <div class="sheet-body set-sheet"><p class="body-copy">${t("settings.shareBody")}</p>
+        <div class="sheet-actions">
+          <button class="soft-button accent" type="button" data-action="export-summary" ${state.periods.length ? "" : "disabled"}>${t("settings.summary")}</button>
+          <button class="soft-button" type="button" data-action="export-csv" ${state.periods.length || state.notes.length ? "" : "disabled"}>${t("settings.csv")}</button>
+        </div></div>`;
+  }
+  if (s.id === "backup") {
+    return `${sheetHead(t("set.backup"))}
+      <div class="sheet-body set-sheet"><p class="body-copy">${t("settings.backupBody")}</p>
+        <div class="sheet-actions">
+          <button class="soft-button accent" type="button" data-action="export-data">${t("settings.export")}</button>
+          <button class="soft-button" type="button" data-action="import-data">${t("settings.import")}</button>
+        </div></div>`;
+  }
+  return `${sheetHead(t("settings.language"))}
+    <div class="sheet-body set-sheet">
+      <div class="segmented" role="group" aria-labelledby="sheetTitle">
         <button type="button" data-action="set-lang" data-value="zh" lang="zh-Hans" ${pressed(getLang() === "zh")}>中文</button>
         <button type="button" data-action="set-lang" data-value="en" lang="en" ${pressed(getLang() === "en")}>English</button>
-      </div>
-    </section>
-
-    <section class="form-card glass" aria-labelledby="setRem">
-      <h2 id="setRem">${t("settings.reminders")}</h2>
-      <div class="field-row">
-        <label class="field" for="prepDays"><span>${t("settings.prepDays")}</span>
-          <input type="number" id="prepDays" min="1" max="14" inputmode="numeric" value="${state.settings.prepDays}"></label>
-        <label class="field" for="reminderTime"><span>${t("settings.reminderTime")}</span>
-          <input type="time" id="reminderTime" value="${state.settings.reminderTime}"></label>
-      </div>
-      <button class="soft-button" type="button" data-action="save-settings">${t("settings.save")}</button>
-    </section>
-
-    <section class="form-card glass" aria-labelledby="setCal">
-      <h2 id="setCal">${t("settings.calendar")}</h2>
-      <p class="body-copy">${t("settings.calendarBody")}</p>
-      ${pred.level === "none" ? `<p class="help">${t("settings.calendarNone")}</p>` : ""}
-      <button class="plain-button" type="button" data-action="calendar-ics" ${pred.level === "none" ? "disabled" : ""}>${t("settings.calendarButton")}</button>
-    </section>
-
-    <section class="form-card glass" aria-labelledby="setSync">
-      <h2 id="setSync">${t("settings.sync")}</h2>
-      <p class="body-copy">${syncText}</p>
-      ${syncButton}
-    </section>
-
-    <section class="form-card glass" aria-labelledby="setShare">
-      <h2 id="setShare">${t("settings.share")}</h2>
-      <p class="body-copy">${t("settings.shareBody")}</p>
-      <div class="button-row">
-        <button class="plain-button" type="button" data-action="export-summary" ${state.periods.length ? "" : "disabled"}>${t("settings.summary")}</button>
-        <button class="plain-button" type="button" data-action="export-csv" ${state.periods.length || state.notes.length ? "" : "disabled"}>${t("settings.csv")}</button>
-      </div>
-    </section>
-
-    <section class="form-card glass" aria-labelledby="setLock">
-      <h2 id="setLock">${t("settings.lock")}</h2>
-      <p class="body-copy">${t("settings.lockBody")}</p>
-      <label class="field" for="lockPin"><span>${t(pinLock.isEnabled() ? "settings.lockCurrent" : "settings.lockPin")}</span>
-        <input type="password" id="lockPin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"></label>
-      ${pinLock.isEnabled() ? "" : `<label class="field" for="lockPin2"><span>${t("settings.lockPin2")}</span>
-        <input type="password" id="lockPin2" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"></label>`}
-      <p class="field-error" id="lockError" role="alert"></p>
-      <button class="plain-button" type="button" data-action="${pinLock.isEnabled() ? "lock-off" : "lock-on"}">${t(pinLock.isEnabled() ? "settings.lockOff" : "settings.lockOn")}</button>
-    </section>
-
-    <section class="form-card glass" aria-labelledby="setBackup">
-      <h2 id="setBackup">${t("settings.backup")}</h2>
-      <p class="body-copy">${t("settings.backupBody")}</p>
-      <div class="button-row">
-        <button class="plain-button" type="button" data-action="export-data">${t("settings.export")}</button>
-        <button class="plain-button" type="button" data-action="import-data">${t("settings.import")}</button>
-      </div>
-    </section>`;
+      </div></div>`;
 }
+
+// PIN pad in the lock sheet: "new" (4–6 digits, then 完成) → "confirm" (same length, submits by
+// itself) → saved; "off" asks for the current PIN and submits once it is the saved length.
+async function pinKey(k) {
+  const s = sheet;
+  if (s?.type !== "setting" || s.id !== "lock") return;
+  s.error = "";
+  if (k === "done") { if (s.mode === "new" && s.pin.length >= 4) await pinNext(); return; }
+  if (k === "del") s.pin = s.pin.slice(0, -1);
+  else if (s.pin.length < 6) s.pin += k;
+  const full = s.mode === "off" ? pinLock.pinLength() : s.mode === "confirm" ? s.first.length : 6;
+  if (s.pin.length === full) { await pinNext(); return; }
+  renderSheet(`[data-action="pin-key"][data-value="${k}"]`);
+}
+
+async function pinNext() {
+  const s = sheet;
+  if (s.mode === "new") {
+    Object.assign(s, { mode: "confirm", first: s.pin, pin: "" });
+    renderSheet();
+    focusSheet();
+    return;
+  }
+  if (s.mode === "confirm" && s.pin !== s.first) {
+    Object.assign(s, { mode: "new", first: "", pin: "", error: t("err.pinMismatch") });
+    renderSheet();
+    focusSheet();
+    return;
+  }
+  if (s.mode === "off" && !(await pinLock.verify(s.pin))) {
+    Object.assign(s, { pin: "", error: t("err.pinWrong") });
+    renderSheet();
+    sheetRoot.querySelector(".lock-dots")?.classList.add("shake");
+    return;
+  }
+  if (s.mode === "off") pinLock.clearPin();
+  else await pinLock.setPin(s.pin);
+  render();
+  closeSheet();
+  showToast(t(s.mode === "off" ? "toast.lockOff" : "toast.lockOn"));
+}
+
 
 // ---------- actions ----------
 
@@ -1211,32 +1319,24 @@ const actions = {
     app.querySelector(`[data-action="cal-select"][data-date="${calSel}"]`)?.focus({ preventScroll: true });
   },
 
-  "save-settings": () => {
-    const prepDays = Number(app.querySelector("#prepDays")?.value || 5);
-    const reminderTime = app.querySelector("#reminderTime")?.value || "09:00";
-    commit({ ...state, settings: { prepDays, reminderTime, updatedAt: new Date().toISOString() } }, "toast.settings");
+  "open-setting": (el) => openSetting(el.dataset.value),
+  "prep-step": (el) => {
+    sheet.time = sheetRoot.querySelector("#reminderTime")?.value || sheet.time;
+    sheet.prepDays = Math.min(14, Math.max(1, sheet.prepDays + Number(el.dataset.value)));
+    renderSheet(`[data-action="prep-step"][data-value="${el.dataset.value}"]`);
+    if (document.activeElement === document.body) focusSheet();
   },
+  "save-settings": () => {
+    const reminderTime = sheetRoot.querySelector("#reminderTime")?.value || sheet.time;
+    commit({ ...state, settings: { prepDays: sheet.prepDays, reminderTime, updatedAt: new Date().toISOString() } }, "toast.settings");
+    closeSheet();
+  },
+  "pin-key": (el) => pinKey(el.dataset.value),
   "export-summary": () => {
     download(`cycle-summary-${core.todayIso()}.html`, report.buildSummaryHtml(state, { t, fmtLong, fmtShort, lang: state.language }), "text/html;charset=utf-8");
   },
   "export-csv": () => {
     download(`cycle-garden-${core.todayIso()}.csv`, report.buildCsv(state, t), "text/csv;charset=utf-8");
-  },
-  "lock-on": async () => {
-    const input = document.querySelector("#lockPin");
-    const pin = input?.value || "";
-    if (!pinLock.isValidPin(pin)) { document.querySelector("#lockError").textContent = t("err.pinFormat"); input?.focus(); return; }
-    if (document.querySelector("#lockPin2")?.value !== pin) { document.querySelector("#lockError").textContent = t("err.pinMismatch"); document.querySelector("#lockPin2")?.focus(); return; }
-    await pinLock.setPin(pin);
-    render();
-    showToast(t("toast.lockOn"));
-  },
-  "lock-off": async () => {
-    const input = document.querySelector("#lockPin");
-    if (!(await pinLock.verify(input?.value || ""))) { document.querySelector("#lockError").textContent = t("err.pinWrong"); input?.focus(); return; }
-    pinLock.clearPin();
-    render();
-    showToast(t("toast.lockOff"));
   },
   "export-data": () => {
     const stamp = core.todayIso().replace(/-/g, "");
@@ -1313,6 +1413,11 @@ sheetRoot.addEventListener("input", (event) => {
 });
 
 sheetRoot.addEventListener("keydown", (event) => {
+  // The PIN pad also takes the number keys, Backspace and Enter.
+  if (sheet?.type === "setting" && sheet.id === "lock" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    const k = /^[0-9]$/.test(event.key) ? event.key : event.key === "Backspace" ? "del" : event.key === "Enter" && event.target.tagName !== "BUTTON" ? "done" : "";
+    if (k) { event.preventDefault(); pinKey(k); return; }
+  }
   if (event.key === "Enter" && event.target.id === "customSym") {
     event.preventDefault();
     actions["add-sym"]();

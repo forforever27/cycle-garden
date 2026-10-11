@@ -886,7 +886,7 @@ function renderCalendar() {
       <li><i class="key note"></i>${t("legend.note")}</li>
     </ul>
     <div class="calendar-grid calendar-head" aria-hidden="true">${weekdays.map((w) => `<span>${w}</span>`).join("")}</div>
-    <div class="calendar-grid days" data-month="${calMonth}">${cells.join("")}</div>
+    <div class="calendar-grid days${calSlide ? ` slide-${calSlide > 0 ? "next" : "prev"}` : ""}" data-month="${calMonth}">${cells.join("")}</div>
     ${calCard(calSel, today, pred)}`;
 }
 
@@ -1159,7 +1159,9 @@ const actions = {
   },
   "cal-step": (el) => {
     calMonth = stepMonth(calMonth, Number(el.dataset.value));
+    calSlide = Number(el.dataset.value);
     render();
+    calSlide = 0;
     app.querySelector(`[data-action="cal-step"][data-value="${el.dataset.value}"]:not([disabled])`)?.focus({ preventScroll: true });
   },
   "cal-select": (el) => {
@@ -1454,18 +1456,38 @@ async function cloudAuthToggle() {
   }
 }
 
-// Calendar: a sideways swipe on the month changes month.
-let swipeX = null;
+// Calendar: on the month, swipe up or left (or scroll down) for the next month, down or right
+// (or scroll up) for the previous one. The new month slides in from where it came.
+function calGesture(dir) {
+  app.querySelector(`[data-action="cal-step"][data-value="${dir}"]:not([disabled])`)?.click();
+}
+let calSlide = 0;
+let swipe = null;
 app.addEventListener("touchstart", (event) => {
-  swipeX = view === "calendar" && event.target.closest(".calendar-grid.days") ? event.touches[0].clientX : null;
+  swipe = view === "calendar" && event.target.closest(".calendar-grid.days") ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null;
 }, { passive: true });
 app.addEventListener("touchend", (event) => {
-  if (swipeX === null) return;
-  const dx = event.changedTouches[0].clientX - swipeX;
-  swipeX = null;
-  if (Math.abs(dx) < 50) return;
-  app.querySelector(`[data-action="cal-step"][data-value="${dx < 0 ? 1 : -1}"]:not([disabled])`)?.click();
+  if (!swipe) return;
+  const dx = event.changedTouches[0].clientX - swipe.x;
+  const dy = event.changedTouches[0].clientY - swipe.y;
+  swipe = null;
+  const vertical = Math.abs(dy) > Math.abs(dx);
+  const d = vertical ? dy : dx;
+  if (Math.abs(d) < 45) return;
+  calGesture(d < 0 ? 1 : -1);
 });
+let wheelSum = 0;
+let wheelLock = 0;
+app.addEventListener("wheel", (event) => {
+  if (view !== "calendar" || !event.target.closest(".calendar-grid.days, .calendar-head")) return;
+  event.preventDefault();
+  if (Date.now() < wheelLock) return;
+  wheelSum += event.deltaY;
+  if (Math.abs(wheelSum) < 60) return;
+  calGesture(wheelSum > 0 ? 1 : -1);
+  wheelSum = 0;
+  wheelLock = Date.now() + 450;
+}, { passive: false });
 
 window.addEventListener("online", queuePush);
 

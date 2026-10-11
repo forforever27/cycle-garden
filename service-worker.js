@@ -1,4 +1,4 @@
-const CACHE_NAME = "cycle-garden-v21";
+const CACHE_NAME = "cycle-garden-v22";
 const ASSETS = [
   "./",
   "./index.html",

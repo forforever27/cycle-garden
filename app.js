@@ -15,6 +15,13 @@ const PREP_ITEMS = ["pads", "liners", "relief"];
 
 const app = document.querySelector("#app");
 const phone = document.querySelector(".phone");
+
+// The visible screen height, for the phone layout (styles.css --app-h). Keyboard opening does not
+// change innerHeight on Android Chrome, so the nav stays put under it.
+const fitHeight = () => document.documentElement.style.setProperty("--app-h", `${window.innerHeight}px`);
+fitHeight();
+window.addEventListener("resize", fitHeight);
+window.addEventListener("pageshow", fitHeight);
 const sheetRoot = document.querySelector("#sheetRoot");
 const toastEl = document.querySelector("#toast");
 const importInput = document.querySelector("#importFile");

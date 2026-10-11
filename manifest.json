@@ -4,8 +4,8 @@
   "description": "A private, low-effort period tracker.",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#090912",
-  "theme_color": "#090912",
+  "background_color": "#0c1130",
+  "theme_color": "#0c1130",
   "orientation": "portrait",
   "icons": [
     {

@@ -1,12 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="80" x2="432" y1="80" y2="432" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ff9bb8"/>
-      <stop offset=".52" stop-color="#b885ff"/>
-      <stop offset="1" stop-color="#8db8ff"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="128" fill="#10101d"/>
-  <circle cx="256" cy="256" r="154" fill="none" stroke="url(#bg)" stroke-width="58" stroke-linecap="round" stroke-dasharray="660 240"/>
-  <circle cx="256" cy="256" r="88" fill="rgba(255,255,255,.10)"/>
-</svg>
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0c1130"></stop><stop offset=".55" stop-color="#12183a"></stop><stop offset="1" stop-color="#1f2452"></stop></linearGradient>
+  <radialGradient id="moon" cx=".36" cy=".3" r=".75"><stop offset="0" stop-color="#fbf4e4"></stop><stop offset="1" stop-color="#e6dac4"></stop></radialGradient>
+  <radialGradient id="glow"><stop offset=".45" stop-color="rgb(243,233,214)" stop-opacity=".42"></stop><stop offset=".62" stop-color="rgb(243,233,214)" stop-opacity=".12"></stop><stop offset="1" stop-color="rgb(243,233,214)" stop-opacity="0"></stop></radialGradient>
+  <radialGradient id="roseGlow"><stop offset="0" stop-color="#ffa8c2" stop-opacity=".55"></stop><stop offset="1" stop-color="#ffa8c2" stop-opacity="0"></stop></radialGradient></defs><rect width="512" height="512" fill="url(#sky)"></rect><circle cx="0.0" cy="202.0" r="1.6" fill="#fff" opacity="0.44"></circle><circle cx="306.3" cy="336.3" r="1.6" fill="#fff" opacity="0.27"></circle><circle cx="19.4" cy="411.7" r="1.6" fill="#fff" opacity="0.53"></circle><circle cx="252.4" cy="53.1" r="1.6" fill="#fff" opacity="0.54"></circle><circle cx="6.9" cy="11.8" r="1.6" fill="#fff" opacity="0.35"></circle><circle cx="129.3" cy="30.9" r="1.6" fill="#fff" opacity="0.65"></circle><circle cx="275.7" cy="297.4" r="1.6" fill="#fff" opacity="0.73"></circle><circle cx="127.0" cy="53.0" r="1.6" fill="#fff" opacity="0.39"></circle><circle cx="403.1" cy="72.9" r="1.6" fill="#fff" opacity="0.74"></circle><circle cx="459.7" cy="137.8" r="2.6" fill="#fff" opacity="0.30"></circle><circle cx="379.5" cy="485.2" r="1.6" fill="#fff" opacity="0.38"></circle><circle cx="488.7" cy="111.6" r="2.6" fill="#fff" opacity="0.58"></circle><circle cx="418.9" cy="158.3" r="1.6" fill="#fff" opacity="0.47"></circle><circle cx="365.2" cy="422.3" r="1.6" fill="#fff" opacity="0.50"></circle><circle cx="235.3" cy="354.8" r="1.6" fill="#fff" opacity="0.34"></circle><circle cx="365.5" cy="262.9" r="1.6" fill="#fff" opacity="0.73"></circle><circle cx="491.5" cy="246.7" r="1.6" fill="#fff" opacity="0.39"></circle><circle cx="431.8" cy="113.3" r="1.6" fill="#fff" opacity="0.33"></circle><circle cx="425.6" cy="379.6" r="1.6" fill="#fff" opacity="0.45"></circle><circle cx="421.3" cy="76.9" r="1.6" fill="#fff" opacity="0.41"></circle><circle cx="247.5" cy="192.6" r="1.6" fill="#fff" opacity="0.28"></circle><circle cx="309.6" cy="455.0" r="1.6" fill="#fff" opacity="0.34"></circle><circle cx="256" cy="300" r="182.9" fill="url(#glow)"></circle><circle cx="256" cy="300" r="118" fill="url(#moon)"></circle><g transform="translate(260 185) scale(2.3)">
+    <circle cx="0" cy="-36" r="26" fill="url(#roseGlow)"></circle>
+    <path d="M0 0C1 -10 -2 -20 0 -30" stroke="#7fa08a" stroke-width="2.2" fill="none" stroke-linecap="round"></path>
+    <ellipse cx="-5" cy="-12" rx="5.4" ry="2.4" fill="#7fa08a" transform="rotate(-28.6 -5 -12)"></ellipse>
+    <ellipse cx="5" cy="-17" rx="5.4" ry="2.4" fill="#7fa08a" transform="rotate(28.6 5 -17)"></ellipse>
+    <path d="M-7 -33Q-8 -44 0 -45Q8 -44 7 -33Q0 -27 -7 -33Z" fill="#ffb6cb"></path>
+    <path d="M-1 -44.6Q3.5 -42 1.5 -37.5Q-1 -39.5 -1 -44.6Z" fill="#f493b2"></path>
+    <path d="M-7.4 -36Q-7 -30 0 -29.2Q-3 -33 -7.4 -36Z" fill="#f48aac"></path>
+    <path d="M7.4 -36Q7 -30 0 -29.2Q3.5 -32 7.4 -36Z" fill="#ef7fa3"></path>
+  </g></svg>

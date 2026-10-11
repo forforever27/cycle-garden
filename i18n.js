@@ -65,6 +65,7 @@ const STRINGS = {
     "list.notCounted": "未计入预测", "list.missed": "可能漏记", "list.tooClose": "两次开始太近", "err.tooClose": "下一次开始只隔了不到 10 天，可能记重了。如果两次都没错，在下面选择这个周期是否计入。", "list.problem": "需要修正", "list.logs": "{n} 条记录", "list.empty": "还没有任何记录。按「月经来了」开始。",
     "list.add": "补记一次经期",
 
+    "cycles.avg": "平均周期", "cycles.usual": "通常 {a}–{b} 天", "cycles.day1": "第 1 天",
     "cal.title": "日历", "cal.today": "回到本月", "cal.now": "本月", "cal.prev": "上个月", "cal.next": "下个月",
     "cal.log": "记录", "cal.edit": "编辑", "cal.noLog": "这天还没有记录",
     "legend.period": "经期", "legend.predicted": "可能的经期", "legend.today": "今天", "legend.note": "有记录",
@@ -176,6 +177,7 @@ const STRINGS = {
     "list.notCounted": "Not counted", "list.missed": "Possibly missed a log", "list.tooClose": "Starts too close", "err.tooClose": "The next period starts less than 10 days after this one, so one may be logged twice. If both are right, choose below whether this cycle counts.", "list.problem": "Needs fixing", "list.logs": "{n} log(s)", "list.empty": "Nothing logged yet. Tap Period started to begin.",
     "list.add": "Add a past period",
 
+    "cycles.avg": "Average cycle", "cycles.usual": "Usually {a}–{b} days", "cycles.day1": "Day 1",
     "cal.title": "Calendar", "cal.today": "This month", "cal.now": "Now", "cal.prev": "Previous month", "cal.next": "Next month",
     "cal.log": "Log", "cal.edit": "Edit", "cal.noLog": "Nothing logged",
     "legend.period": "Period", "legend.predicted": "Likely period", "legend.today": "Today", "legend.note": "Logged",

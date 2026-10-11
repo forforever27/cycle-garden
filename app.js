@@ -102,6 +102,7 @@ function render() {
   app.innerHTML = views[view]();
   renderNav();
   placeMoon();
+  if (view === "cycles") moonrise.mini(app.querySelector(".cycle-moon"), cyclesMoon);
   renderSheet();
 }
 
@@ -379,7 +380,7 @@ function describeOpener(el) {
   if (el.classList?.contains("nav-add")) return ".nav-add";
   if (!el.dataset?.action) return null;
   const attrs = ["date", "id", "value"].filter((k) => el.dataset[k]).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`).join("");
-  const scope = el.closest(".recent-card, .months, .timeline, .home-actions, .section-title, .notice");
+  const scope = el.closest(".recent-card, .lanes, .cal-card, .home-actions, .section-title, .notice");
   const prefix = scope ? `.${[...scope.classList].find((c) => !["glass", "emphasis"].includes(c))} ` : "";
   return `${prefix}[data-action="${el.dataset.action}"]${attrs}`;
 }
@@ -664,52 +665,7 @@ function noteSummary(note) {
     note.note].filter(Boolean).join(" · ");
 }
 
-// Bars per cycle against the typical 21–35-day range from the brief's health rules (§7), so a
-// cycle outside it stands out (Clue's typical / atypical split). Not-counted cycles are dashed.
-const TYPICAL = [21, 35];
-
-function cycleChart(cycles) {
-  const counted = cycles.filter((c) => c.counted);
-  const from = counted.length ? cycles.indexOf(counted[Math.max(0, counted.length - 6)]) : Math.max(0, cycles.length - 6);
-  const shown = cycles.slice(from).slice(-8);
-  const axis = (iso) => (getLang() === "zh" ? `${Number(iso.slice(5, 7))}/${Number(iso.slice(8))}` : fmtShort(iso));
-  if (!shown.length) return `<p class="body-copy">${t("chart.empty")}</p>`;
-  const W = 320;
-  const H = 176;
-  const top = 20;
-  const bottom = 28;
-  const yMax = Math.max(45, Math.ceil((Math.max(...shown.map((c) => c.length)) + 5) / 5) * 5);
-  const y = (v) => top + (H - top - bottom) * (1 - v / yMax);
-  const slot = W / shown.length;
-  const barW = Math.min(26, slot * 0.56);
-  const band = `<rect class="chart-band" x="0" y="${y(TYPICAL[1]).toFixed(1)}" width="${W}" height="${(y(TYPICAL[0]) - y(TYPICAL[1])).toFixed(1)}"/>`;
-  const outside = (n) => n < TYPICAL[0] || n > TYPICAL[1];
-  const step = shown.length > 6 ? 2 : 1; // every other date label when there are more than 6 bars
-  const bars = shown.map((c, i) => {
-    const x = slot * i + (slot - barW) / 2;
-    const cls = ["chart-bar", !c.counted && "excluded", c.counted && outside(c.length) && "atypical"].filter(Boolean).join(" ");
-    return `<rect class="${cls}" x="${x.toFixed(1)}" y="${y(c.length).toFixed(1)}" width="${barW.toFixed(1)}" height="${(y(0) - y(c.length)).toFixed(1)}" rx="5"/>
-      <text class="chart-value" x="${(x + barW / 2).toFixed(1)}" y="${(y(c.length) - 6).toFixed(1)}" text-anchor="middle">${c.length}</text>
-      <text class="chart-axis" x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${(shown.length - 1 - i) % step === 0 ? esc(axis(c.from.startDate)) : ""}</text>`;
-  }).join("");
-  const label = shown.map((c) => `${fmtShort(c.from.startDate)}: ${c.length} ${t("chart.days")}${c.counted ? "" : ` (${t("chart.notCounted")})`}`).join(", ");
-  const anyOutside = shown.some((c) => c.counted && outside(c.length));
-  const anyExcluded = shown.some((c) => !c.counted);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${t("chart.title")}. ${t("chart.typical")}. ${label}`)}">
-      ${band}<line class="chart-base" x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>${bars}
-    </svg>
-    <ul class="chart-legend">
-      <li><span class="swatch band"></span>${t("chart.typical")}</li>
-      ${anyOutside ? `<li><span class="swatch atypical"></span>${t("chart.atypical")}</li>` : ""}
-      ${anyExcluded ? `<li><span class="swatch excluded"></span>${t("chart.notCounted")}</li>` : ""}
-    </ul>`;
-}
-
-// One dot per day, scaled to fit one line (Apple Health's cycle strip).
-function dotStrip(days, bleed) {
-  const n = Math.max(1, Math.min(days, 60));
-  return `<span class="dot-strip" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<i class="${i < bleed ? "on" : ""}"></i>`).join("")}</span>`;
-}
+const TYPICAL = [21, 35]; // the typical range from the brief's health rules (§7)
 
 // Most common symptoms over the last three cycles, for the Insights card (brief §8).
 function recentSymptoms(asc) {
@@ -721,81 +677,123 @@ function recentSymptoms(asc) {
 }
 
 let expandedRows = new Set();
+let cyclesMoon = "cream";
+
+// Cycles (Locked 11 Oct): Cycles_v01 version A's ring with the Today moon inside it, the numbers
+// under it, then one history where each cycle is a lane of dots from day 1 (version C's chart:
+// the faint band is the typical 21–35 days). Tapping a lane opens its dates, logs and edit button.
+function cycleRing(st, pred, today) {
+  const last = core.latestPeriod(state);
+  const stats = core.getStats(state);
+  const N = Math.max(28, stats.longest ?? 0, (st.cycleDay ?? 0) + 1, pred.level !== "none" && last ? core.daysBetween(last.startDate, pred.latest) + 1 : 0);
+  const bleed = last ? core.periodLength(last) ?? Math.max(1, core.daysBetween(last.startDate, today) + 1) : 0;
+  const lo = pred.level !== "none" && last ? core.daysBetween(last.startDate, pred.earliest) + 1 : null;
+  const hi = pred.level !== "none" && last ? core.daysBetween(last.startDate, pred.latest) + 1 : null;
+  const c = 150, R = 134;
+  let dots = "";
+  for (let d = 1; d <= N; d += 1) {
+    const a = -Math.PI / 2 + ((d - 1) / N) * 2 * Math.PI;
+    const x = (c + R * Math.cos(a)).toFixed(1), y = (c + R * Math.sin(a)).toFixed(1);
+    const now = last && d === st.cycleDay;
+    const fill = last && d <= bleed ? "#ffa8c2" : lo && d >= lo && d <= hi ? "rgba(217,198,255,.8)" : now ? "#f6efff" : "rgba(255,255,255,.18)";
+    if (now) dots += `<circle cx="${x}" cy="${y}" r="15" fill="url(#ringGlow)"/><circle cx="${x}" cy="${y}" r="9.5" fill="none" stroke="#f6efff" stroke-width="1.2"/>`;
+    dots += `<circle cx="${x}" cy="${y}" r="${now ? 5 : 4}" fill="${fill}"/>`;
+  }
+  return `<div class="cycle-ring" aria-hidden="true">
+      <div class="cycle-moon"></div>
+      <svg viewBox="0 0 300 300"><defs><radialGradient id="ringGlow"><stop offset="0" stop-color="#f6efff" stop-opacity=".35"/><stop offset="1" stop-color="#f6efff" stop-opacity="0"/></radialGradient></defs>${dots}</svg>
+    </div>`;
+}
 
 function renderCycles() {
   const today = core.todayIso();
+  const st = core.getStatus(state, today);
+  const pred = st.pred || core.predict(state);
   const cycles = core.getCycles(state);
   const stats = core.getStats(state);
   const flags = core.healthFlags(state, today);
   const problems = new Map(core.findProblems(state, today).map((p) => [p.id, p.code]));
   const asc = core.sortedPeriods(state);
   const byFrom = new Map(cycles.map((c) => [c.from.id, c]));
-  const fmtStat = (v) => (v === null ? t("stat.none") : t("stats.days", { n: v }));
   const symptoms = recentSymptoms(asc);
   const symLabel = (s) => (core.SYMPTOMS.includes(s) ? t(`sym.${s}`) : s);
   const isLatest = (p) => asc[asc.length - 1]?.id === p.id;
+  cyclesMoon = homeMoon(st, pred).tint;
 
-  const rows = [...asc].reverse().map((p) => {
+  const spans = asc.map((p, idx) => (asc[idx + 1] ? core.daysBetween(p.startDate, asc[idx + 1].startDate) : Math.max(1, core.daysBetween(p.startDate, today) + 1)));
+  const MAXD = Math.min(60, Math.max(45, ...spans.map((n) => n + 1)));
+  const pct = (n) => `${((n / MAXD) * 100).toFixed(2)}%`;
+
+  const lanes = [...asc].reverse().map((p) => {
     const idx = asc.indexOf(p);
     const next = asc[idx + 1];
     const cycle = byFrom.get(p.id);
     const len = core.periodLength(p);
     const open = !p.endDate && isLatest(p);
-    const span = next ? core.daysBetween(p.startDate, next.startDate) : Math.max(1, core.daysBetween(p.startDate, today) + 1);
+    const span = spans[idx];
     const bleed = len ?? (open ? Math.max(1, core.daysBetween(p.startDate, today) + 1) : 0);
     const until = next ? next.startDate : core.addDays(today, 1);
-    // Logs in date order; heavy flow and pain 4+ are marked in the list instead of moved.
-    const notes = state.notes.filter((n) => n.date >= p.startDate && n.date < until)
-      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    const notes = state.notes.filter((n) => n.date >= p.startDate && n.date < until).sort((a, b) => (a.date < b.date ? -1 : 1));
     const expanded = expandedRows.has(p.id);
-    const shownNotes = expanded ? notes : notes.slice(0, 3);
+    const outside = cycle && cycle.counted && (cycle.length < TYPICAL[0] || cycle.length > TYPICAL[1]);
     const badges = [
       problems.has(p.id) && problems.get(p.id) !== "err.tooClose" && `<span class="badge warn">${t("list.problem")}</span>`,
       cycle && cycle.autoExcluded && `<span class="badge${cycle.tooShort ? " warn" : ""}">${t(cycle.tooShort ? "list.tooClose" : "list.missed")}</span>`,
       cycle && !cycle.counted && !cycle.autoExcluded && `<span class="badge">${t("list.notCounted")}</span>`,
     ].filter(Boolean).join("");
-    const title = len ? t("list.range", { start: esc(fmtShort(p.startDate)), end: esc(fmtShort(p.endDate)) }) : t("list.started", { date: esc(fmtShort(p.startDate)) });
+    const shown = Math.min(span, MAXD);
+    const dots = Array.from({ length: shown }, (_, d) => `<i class="${d < bleed ? "p" : ""}${!next && d === shown - 1 ? " now" : ""}"></i>`).join("");
+    const range = len ? t("list.range", { start: esc(fmtShort(p.startDate)), end: esc(fmtShort(p.endDate)) }) : t("list.started", { date: esc(fmtShort(p.startDate)) });
     const meta = t("list.meta", {
       p: len ? t("list.days", { n: len }) : open ? t("list.open") : t("stat.none"),
       c: cycle ? t("list.days", { n: cycle.length }) : t("list.current", { n: span }),
     });
-    return `<article class="cycle-row glass">
-        <button class="cycle-main" type="button" data-action="edit-period" data-id="${esc(p.id)}">
-          <span class="cycle-year">${p.startDate.slice(0, 4)}</span>
-          <span class="cycle-title"><strong>${title}</strong>${badges}</span>
-          <span class="cycle-meta">${meta}</span>
-          ${dotStrip(span, bleed)}
-          <span class="row-chevron">${ICON_CHEVRON}</span>
+    return `<li class="lane-item${expanded ? " open" : ""}">
+        <button class="lane" type="button" data-action="toggle-row" data-id="${esc(p.id)}" aria-expanded="${expanded}" aria-label="${esc(`${fmtLong(p.startDate)} · ${meta}`)}">
+          <span class="lane-date">${esc(fmtShort(p.startDate))}</span>
+          <span class="lane-dots" style="--n:${MAXD}">${dots}</span>
+          <span class="lane-len${outside ? " warm" : ""}${cycle && !cycle.counted ? " out" : ""}${cycle ? "" : " now"}">${cycle ? cycle.length : span}</span>
         </button>
-        ${notes.length ? `<ul class="note-list">${shownNotes.map((n) => `<li><button type="button" data-action="open-day" data-date="${n.date}"${n.flow === "heavy" || (n.pain ?? 0) >= 4 ? ' class="marked"' : ""}><span class="note-date">${esc(fmtShort(n.date))}</span><span>${esc(noteSummary(n))}</span></button></li>`).join("")}
-          ${notes.length > 3 ? `<li><button class="more" type="button" data-action="toggle-row" data-id="${esc(p.id)}" aria-expanded="${expanded}">${expanded ? t("list.less") : t("list.all", { n: notes.length })}</button></li>` : ""}</ul>` : ""}
-      </article>`;
+        ${badges ? `<span class="lane-badges">${badges}</span>` : ""}
+        ${expanded ? `<div class="lane-more">
+            <p class="lane-meta"><strong>${range}</strong>${meta}</p>
+            ${notes.length ? `<ul class="note-list">${notes.map((n) => `<li><button type="button" data-action="open-day" data-date="${n.date}"${n.flow === "heavy" || (n.pain ?? 0) >= 4 ? ' class="marked"' : ""}><span class="note-date">${esc(fmtShort(n.date))}</span><span>${esc(noteSummary(n))}</span></button></li>`).join("")}</ul>` : ""}
+            <button class="cap-button" type="button" data-action="edit-period" data-id="${esc(p.id)}">${t("sheet.editPeriod")}</button>
+          </div>` : ""}
+      </li>`;
   }).join("");
 
+  const fmtStat = (v) => (v === null ? t("stat.none") : `${v}<small>${t("chart.days")}</small>`);
   return `
-    <header class="page-header">
+    <header class="page-header cycles-head">
       <p class="eyebrow">${t("cycles.eyebrow")}</p>
       <h1 tabindex="-1">${t("cycles.title")}</h1>
     </header>
-    <section class="form-card glass chart-card" aria-labelledby="chartTitle">
-      <h2 id="chartTitle">${t("chart.title")}</h2>
-      ${cycleChart(cycles)}
-      <dl class="mini-stats">
-        <div><dt>${t("stats.shortest")}</dt><dd>${fmtStat(stats.shortest)}</dd></div>
-        <div><dt>${t("stats.longest")}</dt><dd>${fmtStat(stats.longest)}</dd></div>
-        <div><dt>${t("stats.average")}</dt><dd>${fmtStat(stats.average)}</dd></div>
-        <div><dt>${t("stats.period")}</dt><dd>${fmtStat(stats.periodAverage)}</dd></div>
-      </dl>
-      ${symptoms.length ? `<div class="sym-summary"><h3>${t("insight.symptoms")}</h3>
-        <ul class="sym-counts">${symptoms.map(([s, n]) => `<li>${esc(symLabel(s))}<span>${t("insight.times", { n })}</span></li>`).join("")}</ul></div>` : ""}
-    </section>
+    ${cycleRing(st, pred, today)}
+    <div class="cycle-avg">
+      <p class="eyebrow">${t("cycles.avg")}</p>
+      <strong>${fmtStat(stats.average)}</strong>
+      ${stats.shortest !== null ? `<span>${t("cycles.usual", { a: stats.shortest, b: stats.longest })}</span>` : `<span>${t("stat.needMore")}</span>`}
+    </div>
+    <dl class="cycle-trio">
+      <div><dt>${t("stats.shortest")}</dt><dd>${fmtStat(stats.shortest)}</dd></div>
+      <div><dt>${t("stats.longest")}</dt><dd>${fmtStat(stats.longest)}</dd></div>
+      <div><dt>${t("stats.period")}</dt><dd>${fmtStat(stats.periodAverage)}</dd></div>
+    </dl>
+    ${symptoms.length ? `<div class="section-title"><h2>${t("insight.symptoms")}</h2></div>
+      <ul class="sym-counts">${symptoms.map(([s, n]) => `<li>${esc(symLabel(s))}<span>${t("insight.times", { n })}</span></li>`).join("")}</ul>` : ""}
     ${flags.length ? `<section class="form-card glass flags-card" aria-labelledby="flagsTitle">
         <h2 id="flagsTitle">${t("flags.title")}</h2>
         <ul class="flag-list">${flags.map((f) => `<li>${t(f)}</li>`).join("")}</ul>
         <p class="help">${t("flags.footer")}</p>
       </section>` : ""}
     <div class="section-title"><h2>${t("list.title")}</h2><button class="text-button" type="button" data-action="add-period">${t("list.add")}</button></div>
-    <section class="timeline">${rows || `<article class="event glass"><p>${t("list.empty")}</p></article>`}</section>`;
+    ${asc.length ? `<section class="lanes glass" aria-label="${t("chart.title")}">
+        <div class="lane-axis" aria-hidden="true"><span></span><span class="lane-scale" style="--n:${MAXD}"><b style="left:0">${t("cycles.day1")}</b><b style="left:${pct(TYPICAL[0] - 1)}">${TYPICAL[0]}</b><b style="left:${pct(TYPICAL[1] - 1)}">${TYPICAL[1]}</b></span><span></span></div>
+        <div class="lane-band" aria-hidden="true"><span></span><span><i style="left:${pct(TYPICAL[0] - 1)};width:${pct(TYPICAL[1] - TYPICAL[0] + 1)}"></i></span><span></span></div>
+        <ol class="lane-list">${lanes}</ol>
+        <ul class="chart-legend"><li><span class="swatch period"></span>${t("legend.period")}</li><li><span class="swatch band"></span>${t("chart.typical")}</li></ul>
+      </section>` : `<article class="event glass"><p>${t("list.empty")}</p></article>`}`;
 }
 
 // ---------- calendar ----------
@@ -1562,7 +1560,7 @@ const lockOptions = () => ({
     else app.querySelector("h1")?.focus({ preventScroll: true });
   },
 });
-moonrise.mount(document.querySelector("#sky"), { isActive: () => view === "home" && !pinLock.isLocked() });
+moonrise.mount(document.querySelector("#sky"), { isActive: () => !pinLock.isLocked() });
 pinLock.lock(lockRoot, lockOptions());
 
 document.addEventListener("visibilitychange", () => {

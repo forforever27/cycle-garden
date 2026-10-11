@@ -1,33 +1,32 @@
-// Moonrise: the Today screen's sky (Locked 2026-10-11, "little prince vibes").
-// A grain-glow moon rises from the bottom edge as the cycle goes on, with one rose on top.
+// Moonrise: the Today screen's sky (Locked 2026-10-11, "little prince vibes"), and the small moon
+// inside the Cycles ring. A grain-glow moon with one rose on top.
 // Layers: static stars | floating group { living grain halo (canvas, per-particle motion),
-// moon disc, swaying rose }. The halo is the only per-frame work; it pauses whenever the sky
-// is hidden, the page is in the background or isActive() says so, and never runs under
-// reduced motion. Pure decoration: aria-hidden, no data in it.
+// moon disc, swaying rose }. The halos are the only per-frame work: one animation loop draws every
+// live halo, and it pauses whenever none is visible, the page is in the background or the app says
+// so (isActive), and never runs under reduced motion. Pure decoration: aria-hidden, no data in it.
 
 const TINTS = { cream: "243,233,214", lilac: "230,219,255", rose: "255,214,225" };
 const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 let root = null;
 let isActive = () => true;
-let current = null; // { rise: 0..1, tint }
+let current = null; // { rise: 0..1, tint, clearTop }
 let drawn = "";
 let raf = 0;
-let live = null; // halo animation state
+const halos = new Set(); // { L, visible: () => bool }
+let skyHalo = null;
 
 function rng(seed) {
   return () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
 }
 
-function fit(canvas, extra = 0) {
+function fit(canvas, w, h) {
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  const w = root.clientWidth;
-  const h = root.clientHeight + extra;
   canvas.width = Math.round(w * ratio);
   canvas.height = Math.round(h * ratio);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  return [ctx, w, h];
+  return ctx;
 }
 
 export function mount(el, options = {}) {
@@ -51,38 +50,23 @@ export function set(moon) {
 export function wake() {
   cancelAnimationFrame(raf);
   raf = 0;
-  if (live && running()) raf = requestAnimationFrame(frame);
+  if (!reduce.matches && !document.hidden && isActive() && [...halos].some((h) => h.visible())) raf = requestAnimationFrame(loop);
 }
 
-const running = () => current && !reduce.matches && !document.hidden && isActive();
-
-function paint() {
-  if (!root || !root.clientWidth) return;
-  const key = current ? `${root.clientWidth}x${root.clientHeight}|${current.tint}|${current.rise.toFixed(3)}|${Math.round(current.clearTop || 0)}` : `${root.clientWidth}x${root.clientHeight}|none`;
-  if (key === drawn) { wake(); return; }
-  drawn = key;
-
-  const r = rng(7);
-  const [sx, w, h] = fit(root.querySelector(".sky-stars"));
-  sx.clearRect(0, 0, w, h);
-  for (let i = 0; i < 80; i++) {
-    sx.fillStyle = `rgba(255,255,255,${0.2 + r() * 0.5})`;
-    const s = r() < 0.9 ? 1 : 1.6;
-    sx.fillRect(r() * w, r() * h * 0.62, s, s);
+function loop(now) {
+  raf = 0;
+  let any = false;
+  for (const h of halos) {
+    if (h.gone?.()) { halos.delete(h); continue; }
+    if (!h.visible()) continue;
+    drawHalo(h.L, now);
+    any = true;
   }
-  if (!current) { live = null; wake(); return; }
+  if (any && !reduce.matches && !document.hidden && isActive()) raf = requestAnimationFrame(loop);
+}
 
-  // The moon's visible cap grows with the cycle; the float group extends 24px below the screen
-  // so the bob never shows an edge.
-  const col = TINTS[current.tint] || TINTS.cream;
-  const R = Math.min(240, Math.max(180, w * 0.55));
-  const cx = w / 2;
-  // On a short screen the cap is limited so the rose (about 70px tall) never reaches the text.
-  let cap = Math.min(110, h * 0.13) + current.rise * Math.min(210, h * 0.23);
-  if (current.clearTop) cap = Math.max(90, Math.min(cap, h - current.clearTop - 80));
-  const cy = h + R - cap;
-  const [dx, , dh] = fit(root.querySelector(".moon-disc"), 24);
-  dx.clearRect(0, 0, w, dh);
+// A full-moon disc with surface grain, and the rose standing on its top.
+function drawDisc(dx, r, cx, cy, R, col) {
   const g = dx.createRadialGradient(cx - R * 0.3, cy - R * 0.45, R * 0.1, cx, cy, R);
   g.addColorStop(0, `rgba(${col},1)`);
   g.addColorStop(1, `rgba(${col},.84)`);
@@ -93,36 +77,91 @@ function paint() {
     dx.fillStyle = `rgba(80,64,110,${r() * 0.13})`;
     dx.fillRect(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 1, 1);
   }
+}
+
+function paint() {
+  if (!root || !root.clientWidth) return;
+  const W = root.clientWidth, H = root.clientHeight;
+  const key = current ? `${W}x${H}|${current.tint}|${current.rise.toFixed(3)}|${Math.round(current.clearTop || 0)}` : `${W}x${H}|none`;
+  if (key === drawn) { wake(); return; }
+  drawn = key;
+
+  const r = rng(7);
+  const sx = fit(root.querySelector(".sky-stars"), W, H);
+  sx.clearRect(0, 0, W, H);
+  for (let i = 0; i < 80; i++) {
+    sx.fillStyle = `rgba(255,255,255,${0.2 + r() * 0.5})`;
+    const s = r() < 0.9 ? 1 : 1.6;
+    sx.fillRect(r() * W, r() * H * 0.62, s, s);
+  }
+  if (skyHalo) halos.delete(skyHalo);
+  skyHalo = null;
+  if (!current) { wake(); return; }
+
+  // The moon's visible cap grows with the cycle; the float group extends 24px below the screen
+  // so the bob never shows an edge.
+  const h = H + 24;
+  const col = TINTS[current.tint] || TINTS.cream;
+  const R = Math.min(240, Math.max(180, W * 0.55));
+  const cx = W / 2;
+  // On a short screen the cap is limited so the rose (about 70px tall) never reaches the text.
+  let cap = Math.min(110, H * 0.13) + current.rise * Math.min(210, H * 0.23);
+  if (current.clearTop) cap = Math.max(90, Math.min(cap, H - current.clearTop - 80));
+  const cy = H + R - cap;
+  const dx = fit(root.querySelector(".moon-disc"), W, h);
+  dx.clearRect(0, 0, W, h);
+  drawDisc(dx, r, cx, cy, R, col);
 
   const roseCanvas = root.querySelector(".moon-rose");
-  const [rx, , rh] = fit(roseCanvas, 24);
-  rx.clearRect(0, 0, w, rh);
+  const rx = fit(roseCanvas, W, h);
+  rx.clearRect(0, 0, W, h);
   const bx = cx + 6, by = cy - R + 2;
   rose(rx, bx, by, 1.3);
   roseCanvas.style.transformOrigin = `${bx}px ${by}px`;
 
-  const [hx, , hh] = fit(root.querySelector(".moon-halo"), 24);
-  live = halo(r, hx, w, hh, cx, cy, R, col);
-  frame(performance.now());
+  const hx = fit(root.querySelector(".moon-halo"), W, h);
+  skyHalo = { L: halo(r, hx, W, h, cx, cy, R, col, { count: 14000, spread: 34, motes: 90, rise: 130 }), visible: () => Boolean(current) };
+  halos.add(skyHalo);
+  drawHalo(skyHalo.L, performance.now());
+  wake();
 }
 
-function halo(r, ctx, w, h, cx, cy, R, col) {
-  const spread = 34;
+// A small moon (full disc, rose on top, living halo) inside `el`, e.g. the Cycles ring.
+// It stops animating by itself once `el` leaves the page.
+export function mini(el, tint = "cream") {
+  const size = el.clientWidth;
+  if (!size) return;
+  el.innerHTML = `<div class="mini-float"><canvas class="moon-halo"></canvas><canvas class="moon-disc"></canvas><canvas class="moon-rose"></canvas></div>`;
+  const col = TINTS[tint] || TINTS.cream;
+  const r = rng(11);
+  const R = size * 0.2;
+  const cx = size / 2, cy = size / 2 + size * 0.06;
+  drawDisc(fit(el.querySelector(".moon-disc"), size, size), r, cx, cy, R, col);
+  const roseCanvas = el.querySelector(".moon-rose");
+  const bx = cx + 3, by = cy - R + 1;
+  rose(fit(roseCanvas, size, size), bx, by, 0.75);
+  roseCanvas.style.transformOrigin = `${bx}px ${by}px`;
+  const h = { L: halo(r, fit(el.querySelector(".moon-halo"), size, size), size, size, cx, cy, R, col, { count: 4200, spread: 15, motes: 28, rise: 46 }),
+    visible: () => el.isConnected, gone: () => !el.isConnected };
+  halos.add(h);
+  drawHalo(h.L, performance.now());
+  wake();
+}
+
+function halo(r, ctx, w, h, cx, cy, R, col, o) {
   const P = [];
-  for (let i = 0; i < 14000; i++) {
-    const d = R - 10 + -Math.log(1 - r() * 0.995) * spread;
+  for (let i = 0; i < o.count; i++) {
+    const d = R - 10 * (o.spread / 34) + -Math.log(1 - r() * 0.995) * o.spread;
     const out = Math.max(0, d - R);
-    P.push({ a: r() * 6.283, d, al: (0.12 + r() * 0.6) * Math.exp(-out / (spread * 1.45)),
-      w: (r() - 0.5) * 0.03 * (1 + out / 40), amp: 1 + out * 0.12 + r() * 2, f: 0.4 + r() * 0.8, ph: r() * 6.283 });
+    P.push({ a: r() * 6.283, d, al: (0.12 + r() * 0.6) * Math.exp(-out / (o.spread * 1.45)),
+      w: (r() - 0.5) * 0.03 * (1 + out / 40), amp: (1 + out * 0.12 + r() * 2) * (o.spread / 34), f: 0.4 + r() * 0.8, ph: r() * 6.283 });
   }
   const mote = (fresh) => ({ a: -Math.PI / 2 + (r() - 0.5) * 2.2, life: fresh ? 0 : r(), sp: 0.05 + r() * 0.08, sw: r() * 6.283, s: r() < 0.75 ? 1.5 : 2.2 });
-  return { ctx, w, h, cx, cy, R, col, P, M: Array.from({ length: 90 }, () => mote(false)), mote, t0: performance.now(), last: performance.now() };
+  return { ctx, w, h, cx, cy, R, col, P, M: Array.from({ length: o.motes }, () => mote(false)), mote, rise: o.rise, sway: 10 * (o.spread / 34), t0: performance.now(), last: performance.now() };
 }
 
 // Every grain speck drifts round the moon, breathes in and out and twinkles; motes lift off the rim.
-function frame(now) {
-  const L = live;
-  if (!L) return;
+function drawHalo(L, now) {
   const t = (now - L.t0) / 1000;
   const dt = Math.min(0.05, (now - L.last) / 1000);
   L.last = now;
@@ -141,10 +180,9 @@ function frame(now) {
     m.life += m.sp * dt;
     if (m.life > 1) Object.assign(m, L.mote(true));
     ctx.globalAlpha = Math.sin(m.life * Math.PI) * 0.9;
-    ctx.fillRect(cx + Math.cos(m.a) * R + Math.sin(m.life * 6 + m.sw) * 10, cy + Math.sin(m.a) * R - m.life * 130, m.s, m.s);
+    ctx.fillRect(cx + Math.cos(m.a) * R + Math.sin(m.life * 6 + m.sw) * L.sway, cy + Math.sin(m.a) * R - m.life * L.rise, m.s, m.s);
   }
   ctx.globalAlpha = 1;
-  raf = running() ? requestAnimationFrame(frame) : 0;
 }
 
 // A small line-drawn rose standing on the moon (Cycle Garden; the Little Prince's rose).

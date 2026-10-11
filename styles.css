@@ -516,7 +516,7 @@ textarea::placeholder, input::placeholder { color: rgba(255, 248, 255, 0.62); }
 /* calendar (Locked 11 Oct: Calendar_v01 version A) */
 .app.view-calendar { display: flex; flex-direction: column; }
 .cal-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 12px 4px 0; }
-.cal-head h1 { font: 400 40px/1 var(--serif); }
+.cal-head h1 { min-width: 0; font: 400 clamp(30px, 10vw, 40px)/1 var(--serif); white-space: nowrap; }
 .cal-head h1 span { margin-left: 10px; color: rgba(251, 246, 255, 0.6); font: 400 16px/1 var(--serif); letter-spacing: 0.04em; }
 .cal-arrows { display: flex; gap: 8px; }
 .cal-arrows .icon-btn:disabled { opacity: 0.3; }
@@ -531,10 +531,7 @@ textarea::placeholder, input::placeholder { color: rgba(255, 248, 255, 0.62); }
 .calendar-head { margin-top: 26px; padding-bottom: 8px; color: rgba(251, 246, 255, 0.55); font-size: 11px; letter-spacing: 0.1em; text-align: center; }
 /* the month grid takes vertical and sideways swipes itself (they change month) */
 .calendar-grid.days { row-gap: 14px; touch-action: none; }
-.calendar-grid.days.slide-next { animation: cal-next 320ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-.calendar-grid.days.slide-prev { animation: cal-prev 320ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-@keyframes cal-next { from { opacity: 0; transform: translateY(28px); } }
-@keyframes cal-prev { from { opacity: 0; transform: translateY(-28px); } }
+.calendar-grid.days { will-change: transform; } /* month turns are animated in app.js (calTurn) */
 .calendar-day {
   position: relative; display: grid; height: 46px; place-items: center;
   color: var(--soft); font: 400 21px/1 var(--serif);

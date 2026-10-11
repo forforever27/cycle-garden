@@ -886,7 +886,7 @@ function renderCalendar() {
       <li><i class="key note"></i>${t("legend.note")}</li>
     </ul>
     <div class="calendar-grid calendar-head" aria-hidden="true">${weekdays.map((w) => `<span>${w}</span>`).join("")}</div>
-    <div class="calendar-grid days${calSlide ? ` slide-${calSlide > 0 ? "next" : "prev"}` : ""}" data-month="${calMonth}">${cells.join("")}</div>
+    <div class="calendar-grid days" data-month="${calMonth}">${cells.join("")}</div>
     ${calCard(calSel, today, pred)}`;
 }
 
@@ -1157,13 +1157,7 @@ const actions = {
     render();
     app.querySelector("h1")?.focus({ preventScroll: true });
   },
-  "cal-step": (el) => {
-    calMonth = stepMonth(calMonth, Number(el.dataset.value));
-    calSlide = Number(el.dataset.value);
-    render();
-    calSlide = 0;
-    app.querySelector(`[data-action="cal-step"][data-value="${el.dataset.value}"]:not([disabled])`)?.focus({ preventScroll: true });
-  },
+  "cal-step": (el) => calTurn(Number(el.dataset.value), "y", el === document.activeElement),
   "cal-select": (el) => {
     calSel = el.dataset.date;
     render();
@@ -1456,37 +1450,102 @@ async function cloudAuthToggle() {
   }
 }
 
-// Calendar: on the month, swipe up or left (or scroll down) for the next month, down or right
-// (or scroll up) for the previous one. The new month slides in from where it came.
-function calGesture(dir) {
-  app.querySelector(`[data-action="cal-step"][data-value="${dir}"]:not([disabled])`)?.click();
+// Calendar month turns. The month follows a finger as it drags (rubber-banding past the first or
+// last month); let go past 45px and the old month flies off with a soft blur while the new one
+// cascades in row by row from the side it came from, title alongside. Swipe up or left (or scroll
+// down) = next month; down or right (or scroll up) = previous. Buttons use the same turn.
+const CAL_EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+let calBusy = false;
+
+async function calTurn(dir, axis = "y", refocus = false) {
+  const grid = app.querySelector(".calendar-grid.days");
+  const allowed = app.querySelector(`[data-action="cal-step"][data-value="${dir}"]:not([disabled])`);
+  if (calBusy || !grid) return;
+  if (!allowed) { calSpringBack(grid); return; }
+  calBusy = true;
+  const move = (px) => (axis === "x" ? `translateX(${px}px)` : `translateY(${px}px)`);
+  if (!reduceMotion.matches) {
+    const title = app.querySelector(".cal-head h1");
+    const from = grid.style.transform || "none";
+    await Promise.all([
+      grid.animate([{ transform: from, opacity: getComputedStyle(grid).opacity, filter: "blur(0px)" },
+        { transform: `${move(-dir * 110)} scale(0.94)`, opacity: 0, filter: "blur(6px)" }],
+      { duration: 210, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" }).finished,
+      title?.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: move(-dir * 18) }],
+        { duration: 170, easing: "ease-in", fill: "forwards" }).finished,
+    ]);
+  }
+  calMonth = stepMonth(calMonth, dir);
+  render();
+  calBusy = false;
+  if (refocus) app.querySelector(`[data-action="cal-step"][data-value="${dir}"]:not([disabled])`)?.focus({ preventScroll: true });
+  if (reduceMotion.matches) return;
+  // Cascade: rows nearest the incoming side land first; each day a beat after its neighbour.
+  const cells = [...app.querySelectorAll(".calendar-grid.days > *")];
+  const rows = Math.ceil(cells.length / 7);
+  cells.forEach((cell, n) => {
+    const row = Math.floor(n / 7);
+    const col = n % 7;
+    const order = axis === "x" ? (dir > 0 ? col : 6 - col) : (dir > 0 ? row : rows - 1 - row);
+    cell.animate([{ opacity: 0, transform: `${move(dir * 34)} scale(0.9)` }, { opacity: 1, transform: "none" }],
+      { duration: 460, delay: order * 38 + (axis === "x" ? row : col) * 7, easing: CAL_EASE, fill: "backwards" });
+  });
+  app.querySelector(".cal-head h1")?.animate([{ opacity: 0, transform: move(dir * 18) }, { opacity: 1, transform: "none" }],
+    { duration: 420, easing: CAL_EASE });
+  app.querySelector(".cal-card")?.animate([{ opacity: 0.35, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+    { duration: 420, delay: 120, easing: CAL_EASE, fill: "backwards" });
 }
-let calSlide = 0;
+
+function calSpringBack(grid) {
+  const from = grid.style.transform;
+  grid.style.transform = "";
+  grid.style.opacity = "";
+  if (from && !reduceMotion.matches) grid.animate([{ transform: from }, { transform: "none" }], { duration: 380, easing: "cubic-bezier(0.3, 1.4, 0.5, 1)" });
+}
+
 let swipe = null;
 app.addEventListener("touchstart", (event) => {
-  swipe = view === "calendar" && event.target.closest(".calendar-grid.days") ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null;
+  if (calBusy || view !== "calendar" || !event.target.closest(".calendar-grid.days")) { swipe = null; return; }
+  swipe = { x: event.touches[0].clientX, y: event.touches[0].clientY, axis: null, d: 0 };
 }, { passive: true });
-app.addEventListener("touchend", (event) => {
+app.addEventListener("touchmove", (event) => {
   if (!swipe) return;
-  const dx = event.changedTouches[0].clientX - swipe.x;
-  const dy = event.changedTouches[0].clientY - swipe.y;
+  const dx = event.touches[0].clientX - swipe.x;
+  const dy = event.touches[0].clientY - swipe.y;
+  if (!swipe.axis && Math.hypot(dx, dy) > 8) swipe.axis = Math.abs(dy) > Math.abs(dx) ? "y" : "x";
+  if (!swipe.axis) return;
+  swipe.d = swipe.axis === "y" ? dy : dx;
+  const grid = app.querySelector(".calendar-grid.days");
+  const open = app.querySelector(`[data-action="cal-step"][data-value="${swipe.d < 0 ? 1 : -1}"]:not([disabled])`);
+  const pull = open ? swipe.d * 0.55 : swipe.d * 0.18; // rubber band at the first and last month
+  grid.style.transform = swipe.axis === "y" ? `translateY(${pull}px)` : `translateX(${pull}px)`;
+  grid.style.opacity = String(Math.max(0.35, 1 - Math.abs(pull) / 260));
+}, { passive: true });
+app.addEventListener("touchend", () => {
+  if (!swipe) return;
+  const { d, axis } = swipe;
   swipe = null;
-  const vertical = Math.abs(dy) > Math.abs(dx);
-  const d = vertical ? dy : dx;
-  if (Math.abs(d) < 45) return;
-  calGesture(d < 0 ? 1 : -1);
+  const grid = app.querySelector(".calendar-grid.days");
+  if (!axis || Math.abs(d) < 45) { if (grid) calSpringBack(grid); return; }
+  calTurn(d < 0 ? 1 : -1, axis);
 });
+app.addEventListener("touchcancel", () => {
+  swipe = null;
+  const grid = app.querySelector(".calendar-grid.days");
+  if (grid) calSpringBack(grid);
+});
+
 let wheelSum = 0;
 let wheelLock = 0;
 app.addEventListener("wheel", (event) => {
   if (view !== "calendar" || !event.target.closest(".calendar-grid.days, .calendar-head")) return;
   event.preventDefault();
-  if (Date.now() < wheelLock) return;
+  if (calBusy || Date.now() < wheelLock) return;
   wheelSum += event.deltaY;
   if (Math.abs(wheelSum) < 60) return;
-  calGesture(wheelSum > 0 ? 1 : -1);
+  calTurn(wheelSum > 0 ? 1 : -1, "y");
   wheelSum = 0;
-  wheelLock = Date.now() + 450;
+  wheelLock = Date.now() + 520;
 }, { passive: false });
 
 window.addEventListener("online", queuePush);

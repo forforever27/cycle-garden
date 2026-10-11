@@ -2,7 +2,7 @@ import * as report from "./report.js";
 import * as pinLock from "./lock.js";
 import * as core from "./core.js";
 import * as moonrise from "./moonrise.js";
-import { t, setLang, getLang, other, fmtShort, fmtLong, fmtDay, fmtWeekday, fmtMonth } from "./i18n.js";
+import { t, setLang, getLang, other, fmtShort, fmtLong, fmtDay, fmtWeekday } from "./i18n.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 // Same key as v1 so existing data loads; the raw v1 value is copied once to BACKUP_KEY before
@@ -25,7 +25,8 @@ let view = "home";
 let sheet = null;
 let sheetOpener = null;
 let moonState = null;
-let calendarNeedsScroll = true;
+let calMonth = null; // the month shown on Calendar (YYYY-MM)
+let calSel = null; // the day its card shows
 setLang(state.language);
 
 // ---------- storage ----------
@@ -101,10 +102,6 @@ function render() {
   app.innerHTML = views[view]();
   renderNav();
   placeMoon();
-  if (view === "calendar" && calendarNeedsScroll) {
-    calendarNeedsScroll = false;
-    scrollToMonth(core.todayIso().slice(0, 7), false);
-  }
   renderSheet();
 }
 
@@ -131,7 +128,7 @@ function renderNav() {
 function setView(next) {
   view = next;
   sheet = null;
-  if (next === "calendar") calendarNeedsScroll = true;
+  if (next === "calendar") { calMonth = null; calSel = null; }
   app.scrollTop = 0;
   render();
   app.querySelector("h1")?.focus({ preventScroll: true });
@@ -807,69 +804,90 @@ function monthKey(iso) {
   return iso.slice(0, 7);
 }
 
-function renderCalendar() {
-  const today = core.todayIso();
+// Calendar (Locked 11 Oct, Calendar_v01 version A): one month at a time, period days as a soft
+// pastel band, likely days as a faint lilac band, a dot under logged days; tapping a day selects it
+// and the glass card below shows what was logged, with one button to log or edit it.
+function calRange(today) {
   const pred = core.predict(state);
   const first = core.sortedPeriods(state)[0]?.startDate;
-  let start = core.addDays(`${monthKey(today)}-01`, -62).slice(0, 7);
-  if (first && monthKey(first) < start) start = monthKey(first);
   const floor = `${Number(today.slice(0, 4)) - 2}${today.slice(4, 7)}`;
-  if (start < floor) start = floor;
-  let end = monthKey(core.addDays(today, 75));
-  if (pred.level !== "none" && monthKey(pred.latest) > end) end = monthKey(pred.latest);
-
-  const weekdays = t("weekdays").split(",");
-  const months = [];
-  for (let ym = start; ym <= end;) {
-    const [y, m] = ym.split("-").map(Number);
-    const firstDay = new Date(y, m - 1, 1);
-    const offset = (firstDay.getDay() + 6) % 7;
-    const count = new Date(y, m, 0).getDate();
-    const cells = Array.from({ length: offset }, () => `<span class="calendar-day blank" aria-hidden="true"></span>`);
-    const infos = Array.from({ length: count }, (_, i) => core.dayInfo(state, `${ym}-${String(i + 1).padStart(2, "0")}`, today, pred));
-    const kind = (info) => (info?.period ? "period" : info?.predicted ? "predict" : "");
-    for (let d = 1; d <= count; d += 1) {
-      const iso = `${ym}-${String(d).padStart(2, "0")}`;
-      const info = infos[d - 1];
-      const col = (offset + d - 1) % 7;
-      const run = kind(info);
-      const runStart = run && (col === 0 || kind(infos[d - 2]) !== run);
-      const runEnd = run && (col === 6 || kind(infos[d]) !== run);
-      const cls = [info.period && "period", info.predicted && !info.period && "predict", runStart && "run-start", runEnd && "run-end", info.today && "today", info.hasNote && "has-note"].filter(Boolean).join(" ");
-      const extra = [info.today && t("legend.today"), info.period && t("legend.period"), info.predicted && t("legend.predicted"), info.hasNote && t("legend.note")].filter(Boolean);
-      cells.push(`<button class="calendar-day ${cls}" type="button" data-action="open-day" data-date="${iso}" ${info.future ? "disabled" : ""} aria-label="${esc([fmtLong(iso), ...extra].join(" · "))}">${d}</button>`);
-    }
-    months.push(`<section class="month" data-month="${ym}">
-        <h2>${esc(fmtMonth(y, m - 1))}</h2>
-        <div class="calendar-grid days">${cells.join("")}</div>
-      </section>`);
-    ym = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
-  }
-
-  return `
-    <div class="calendar-sticky">
-      <header class="page-header row">
-        <h1 tabindex="-1">${t("cal.title")}</h1>
-        <button class="soft-button small" type="button" data-action="cal-today">${t("cal.today")}</button>
-      </header>
-      <ul class="legend">
-        <li><i class="key period"></i>${t("legend.period")}</li>
-        <li><i class="key predict"></i>${t("legend.predicted")}</li>
-        <li><i class="key today"></i>${t("legend.today")}</li>
-        <li><i class="key note"></i>${t("legend.note")}</li>
-      </ul>
-      <div class="calendar-grid calendar-head" aria-hidden="true">${weekdays.map((w) => `<span>${w}</span>`).join("")}</div>
-    </div>
-    <div class="months">${months.join("")}</div>`;
+  let min = first && monthKey(first) < monthKey(today) ? monthKey(first) : monthKey(today);
+  if (min < floor) min = floor;
+  let max = monthKey(core.addDays(today, 31));
+  if (pred.level !== "none" && monthKey(pred.latest) > max) max = monthKey(pred.latest);
+  return { min, max, pred };
 }
 
-function scrollToMonth(ym, smooth) {
-  const target = app.querySelector(`[data-month="${ym}"]`);
-  if (!target) return;
-  const sticky = app.querySelector(".calendar-sticky");
-  const padTop = parseFloat(getComputedStyle(app).paddingTop) || 0;
-  const offset = target.offsetTop - padTop - (sticky ? sticky.offsetHeight + 8 : 0);
-  app.scrollTo({ top: Math.max(0, offset), behavior: smooth && !reduceMotion.matches ? "smooth" : "auto" });
+const stepMonth = (ym, n) => {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+function calCard(iso, today, pred) {
+  const info = core.dayInfo(state, iso, today, pred);
+  const period = core.periodOn(state, iso, today);
+  const cd = cycleDayOn(iso);
+  const note = core.notesOn(state, iso)[0];
+  const fill = info.period ? "#ffa8c2" : info.predicted ? "#d9c6ff" : "rgba(246,239,255,.86)";
+  const glyph = `<svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="12" fill="rgba(255,255,255,.1)"/>${cd ? `<path d="${moonPath(17, 17, 12, (((cd - 1) / 30) + 0.5) % 1)}" fill="${fill}"/>` : ""}</svg>`;
+  const status = period
+    ? t("sheet.inPeriod", { n: core.daysBetween(period.startDate, iso) + 1 })
+    : [cd ? t("status.cycleDay", { n: cd }) : "", info.predicted ? t("legend.predicted") : ""].filter(Boolean).join(" · ");
+  const items = note ? noteSummary(note).split(" · ") : [];
+  return `<section class="cal-card glass" aria-live="polite" aria-labelledby="calCardTitle">
+      <div class="cal-card-head">${glyph}
+        <h2 id="calCardTitle">${esc(fmtShort(iso))}<span>${iso === today ? t("sheet.today") : esc(fmtWeekday(iso))}</span></h2>
+        <button class="cap-button" type="button" data-action="open-day" data-date="${iso}">${note ? t("cal.edit") : t("cal.log")}</button>
+      </div>
+      ${status ? `<p class="cal-status${period ? " is-period" : ""}">${status}</p>` : ""}
+      <ul class="cal-log">${items.length ? items.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="empty">${t("cal.noLog")}</li>`}</ul>
+    </section>`;
+}
+
+function renderCalendar() {
+  const today = core.todayIso();
+  const { min, max, pred } = calRange(today);
+  if (!calMonth || calMonth < min || calMonth > max) calMonth = monthKey(today);
+  if (!calSel || calSel > today) calSel = today;
+  const [y, m] = calMonth.split("-").map(Number);
+  const monthName = new Intl.DateTimeFormat(getLang() === "zh" ? "zh-CN" : "en-GB", { month: "long" }).format(new Date(y, m - 1, 1));
+  const weekdays = t("weekdays").split(",");
+  const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const count = new Date(y, m, 0).getDate();
+  const isos = Array.from({ length: count }, (_, i) => `${calMonth}-${String(i + 1).padStart(2, "0")}`);
+  const infos = isos.map((iso) => core.dayInfo(state, iso, today, pred));
+  const kind = (info) => (info?.period ? "period" : info?.predicted ? "predict" : "");
+  const cells = Array.from({ length: offset }, () => `<span class="calendar-day blank" aria-hidden="true"></span>`);
+  isos.forEach((iso, i) => {
+    const info = infos[i];
+    const col = (offset + i) % 7;
+    const run = kind(info);
+    const runStart = run && (col === 0 || kind(infos[i - 1]) !== run);
+    const runEnd = run && (col === 6 || kind(infos[i + 1]) !== run);
+    const cls = [run, runStart && "run-start", runEnd && "run-end", info.today && "today", iso === calSel && "selected", info.hasNote && "has-note"].filter(Boolean).join(" ");
+    const extra = [info.today && t("legend.today"), info.period && t("legend.period"), info.predicted && t("legend.predicted"), info.hasNote && t("legend.note")].filter(Boolean);
+    cells.push(`<button class="calendar-day ${cls}" type="button" data-action="cal-select" data-date="${iso}" ${info.future ? "disabled" : ""} ${pressed(iso === calSel)} aria-label="${esc([fmtLong(iso), ...extra].join(" · "))}">${i + 1}</button>`);
+  });
+  const chevron = (dir) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${dir < 0 ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"}"/></svg>`;
+
+  return `
+    <header class="cal-head">
+      <h1 tabindex="-1">${esc(monthName)}<span>${y}</span></h1>
+      <div class="cal-arrows">
+        ${calMonth !== monthKey(today) ? `<button class="icon-btn cal-now" type="button" data-action="cal-today">${t("cal.now")}</button>` : ""}
+        <button class="icon-btn" type="button" data-action="cal-step" data-value="-1" ${calMonth <= min ? "disabled" : ""} aria-label="${t("cal.prev")}">${chevron(-1)}</button>
+        <button class="icon-btn" type="button" data-action="cal-step" data-value="1" ${calMonth >= max ? "disabled" : ""} aria-label="${t("cal.next")}">${chevron(1)}</button>
+      </div>
+    </header>
+    <ul class="legend">
+      <li><i class="key period"></i>${t("legend.period")}</li>
+      <li><i class="key predict"></i>${t("legend.predicted")}</li>
+      <li><i class="key note"></i>${t("legend.note")}</li>
+    </ul>
+    <div class="calendar-grid calendar-head" aria-hidden="true">${weekdays.map((w) => `<span>${w}</span>`).join("")}</div>
+    <div class="calendar-grid days" data-month="${calMonth}">${cells.join("")}</div>
+    ${calCard(calSel, today, pred)}`;
 }
 
 // ---------- settings ----------
@@ -1133,7 +1151,22 @@ const actions = {
     closeSheet();
   },
 
-  "cal-today": () => scrollToMonth(core.todayIso().slice(0, 7), true),
+  "cal-today": () => {
+    calMonth = null;
+    calSel = null;
+    render();
+    app.querySelector("h1")?.focus({ preventScroll: true });
+  },
+  "cal-step": (el) => {
+    calMonth = stepMonth(calMonth, Number(el.dataset.value));
+    render();
+    app.querySelector(`[data-action="cal-step"][data-value="${el.dataset.value}"]:not([disabled])`)?.focus({ preventScroll: true });
+  },
+  "cal-select": (el) => {
+    calSel = el.dataset.date;
+    render();
+    app.querySelector(`[data-action="cal-select"][data-date="${calSel}"]`)?.focus({ preventScroll: true });
+  },
 
   "save-settings": () => {
     const prepDays = Number(app.querySelector("#prepDays")?.value || 5);
@@ -1420,6 +1453,19 @@ async function cloudAuthToggle() {
     if (error.code !== "auth/popup-closed-by-user") showToast(t("toast.signInFailed"));
   }
 }
+
+// Calendar: a sideways swipe on the month changes month.
+let swipeX = null;
+app.addEventListener("touchstart", (event) => {
+  swipeX = view === "calendar" && event.target.closest(".calendar-grid.days") ? event.touches[0].clientX : null;
+}, { passive: true });
+app.addEventListener("touchend", (event) => {
+  if (swipeX === null) return;
+  const dx = event.changedTouches[0].clientX - swipeX;
+  swipeX = null;
+  if (Math.abs(dx) < 50) return;
+  app.querySelector(`[data-action="cal-step"][data-value="${dx < 0 ? 1 : -1}"]:not([disabled])`)?.click();
+});
 
 window.addEventListener("online", queuePush);
 
